@@ -1,0 +1,96 @@
+# Files/dirs that should never end up in a Docker build context.
+# Smaller context = faster builds + smaller chance of leaking secrets.
+
+# --- VCS ---
+**/.git
+**/.gitignore
+**/.gitattributes
+.git
+.gitignore
+.gitattributes
+.github
+
+# --- Editor / OS noise ---
+.DS_Store
+.idea
+.vscode
+*.swp
+*.swo
+Thumbs.db
+
+# --- Local Python (we install fresh inside the image) ---
+**/.venv
+**/venv
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/*.egg
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.local
+**/.coverage
+**/htmlcov
+
+# --- Secrets / local config (NEVER bake into an image) ---
+**/.env
+**/.env.*
+!**/.env.docker
+**/*.pem
+**/*.key
+
+# --- Local databases ---
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+
+# --- Frontend tree: included for builds, but each subproject's own
+#     .dockerignore trims node_modules / .next / secrets at copy time.
+#     We exclude frontend/docs (none today, but keep it explicit),
+#     frontend/.env files, and the AI-tool directories that should
+#     never end up in an image. The frontend/ subdirectory itself is
+#     NOT excluded — compose.yaml builds the frontend image. ---
+docs
+AGENTS.md
+CLAUDE.md
+architecture.md
+skills-lock.json
+.impeccable
+.agents
+.claude
+.codex
+.cursor
+.puku-cli
+
+# --- Tests / eval (not needed at runtime) ---
+**/tests
+**/test_*.py
+**/*_test.py
+**/eval
+**/requirements-eval.txt
+.pytest_cache
+
+# --- Docker / compose meta (don't recurse into itself) ---
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+compose.yaml
+compose.*.yaml
+compose.*.yml
+DOCKER.md
+
+# --- Logs / build artifacts ---
+**/*.log
+**/build
+**/dist
+**/.next
+**/node_modules
+**/.npm
+**/.cache
+**/.parcel-cache
+**/.turbo
+**/.eslintcache

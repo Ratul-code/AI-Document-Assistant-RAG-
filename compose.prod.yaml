@@ -1,0 +1,95 @@
+# =============================================================================
+# AI Document Analyser — production overlay
+#
+# Merged ON TOP of compose.yaml for production deployments. The main
+# differences from dev:
+#
+#   * NO source bind mounts — the container runs the image's frozen
+#     source. Code changes require a rebuild + redeploy.
+#   * The image is pulled by a versioned tag (IMAGE_TAG), not built
+#     locally. CI/CD publishes ai-doc-analyser-backend:${IMAGE_TAG}
+#     to a registry, and the host pulls it on each deploy.
+#   * Restart policy is `always` (not `unless-stopped`) so a crashed
+#     container keeps coming back even after a Docker daemon outage.
+#   * APP_ENV defaults to `prod`. APP_DEBUG stays off.
+#   * The api is NOT exposed on a public port by default; put a
+#     reverse proxy (Caddy / nginx / Traefik) in front and forward
+#     443 → api:8000.
+#
+# Usage:
+#   IMAGE_TAG=v1.4.2 \
+#     docker compose -f compose.yaml -f compose.prod.yaml pull
+#   IMAGE_TAG=v1.4.2 \
+#     docker compose -f compose.yaml -f compose.prod.yaml up -d
+#
+# Override-key syntax note: `!reset null` (and `!reset []`) are
+# Compose's documented way to clear a key inherited from a base
+# file. We use them to wipe `build:` and `ports:` so prod runs
+# purely off the registry image with no host port binding.
+#
+# Secrets: in production, `backend/.env` should contain production
+# values (APP_ENV=prod, real JWT_SECRET, real Supabase keys, real
+# CORS_ORIGINS, real LLM keys). The .env file is intentionally NOT
+# in the image — bind-mount or otherwise inject it at deploy time.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # API — frozen image, restart always, no dev reload.
+  # ---------------------------------------------------------------------------
+  api:
+    # Don't build locally; pull the versioned image from the
+    # registry. `!reset null` clears the base file's `build:` key.
+    build: !reset null
+    image: ai-doc-analyser-backend:${IMAGE_TAG:-latest}
+    # `unless-stopped` was the dev default; in prod we want the
+    # container to come back even after a Docker daemon outage.
+    restart: always
+    # Drop the host port binding — let a reverse proxy forward
+    # 127.0.0.1:8000 → 443 publicly. If you really need to expose
+    # the api directly (e.g. behind a cloud LB), override the
+    # `ports:` key in your deploy-specific override file.
+    ports: !reset []
+    # No bind mounts in prod. The `hf_cache` named volume declared
+    # in compose.yaml IS still mounted — the cache is a runtime
+    # concern (model download) not source code.
+    command: ["api"]
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: "false"
+
+  # ---------------------------------------------------------------------------
+  # Worker — frozen image, restart always, no bind mount.
+  # ---------------------------------------------------------------------------
+  worker:
+    build: !reset null
+    image: ai-doc-analyser-backend:${IMAGE_TAG:-latest}
+    restart: always
+    environment:
+      APP_ENV: prod
+
+  # ---------------------------------------------------------------------------
+  # Beat — frozen image, restart always, no bind mount.
+  # ---------------------------------------------------------------------------
+  beat:
+    build: !reset null
+    image: ai-doc-analyser-backend:${IMAGE_TAG:-latest}
+    restart: always
+    environment:
+      APP_ENV: prod
+
+  # ---------------------------------------------------------------------------
+  # Redis — restart always; in prod you usually want a managed
+  # Redis (ElastiCache, Memorystore, Upstash). The in-stack redis
+  # is fine for single-host deployments and dev/staging parity.
+  # ---------------------------------------------------------------------------
+  redis:
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # Postgres — same story: in prod you usually want a managed DB
+  # (Supabase, RDS, Neon). Keep the in-stack postgres profile-gated
+  # by `local-pg` (as set in compose.yaml) so prod doesn't
+  # accidentally start a second DB. To start a co-located DB in
+  # staging, run with `--profile local-pg`.
+  # ---------------------------------------------------------------------------

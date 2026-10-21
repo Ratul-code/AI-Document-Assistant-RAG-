@@ -1,0 +1,65 @@
+# =============================================================================
+# Heavy ML / embedding / reranking dependencies.
+#
+# These are the big, slow-changing packages (~1-2 GB on disk) that take
+# several minutes to download and compile. They are imported **lazily**
+# inside the app (see app/services/ai/embeddings.py, app/services/ai/rerankers.py,
+# app/services/document/chunker/__init__.py) so the FastAPI process
+# doesn't pay their import cost unless it actually triggers an embedding
+# or rerank — but the Celery worker DOES need them at runtime.
+#
+# Kept in a separate file so the multi-stage Dockerfile can install
+# them in the `ml-deps` stage and cache that layer independently.
+# Editing backend/requirements.txt alone (e.g. bumping fastapi) will
+# not invalidate the ML layer.
+#
+# Installed transitively by `pip install -r requirements.txt` because
+# requirements.txt `-r requirements-ml.txt`. Install directly only if
+# you are doing local ML-only work and don't want the web stack.
+# =============================================================================
+
+# --- Core ML stack ---
+# PyTorch is the largest single dep in this project (~800 MB). Its
+# ABI dictates the build of sentence-transformers / transformers, so
+# it must be installed first to avoid pip picking a CPU-only fallback.
+torch==2.14.0
+
+# sentence-transformers pulls in transformers + tokenizers + huggingface-hub
+# as transitive deps. We pin the top-level package to lock the model
+# loading API; the transitive versions are managed by pip.
+sentence-transformers==6.1.0
+
+# --- Tokenizer used by the chunker / chat-history utilities ---
+# tiktoken is used by app/services/document/chunker and by the
+# chat-history summarizer. Small (~1 MB) but pinned here because it's
+# part of the "ML family" semantically and follows the same
+# slow-changing cadence.
+tiktoken==0.13.0
+#--- NVIDIA CUDA runtime wheels (transitive deps of torch) ---
+# Pinned explicitly so the Docker `ml-deps` layer hashes are
+# deterministic. Without these pins, pip is free to choose any
+# patch version on each resolve, which silently invalidates the
+# cache for the ~650 MB `ml-deps` stage every time a wheel updates
+# upstream.
+#
+# IMPORTANT: only the four packages below are direct requirements
+# of torch==2.14.0 (per its own PyPI metadata). The other
+# `nvidia-*-cu13` wheels (cublas, cuda-runtime, cufft, curand,
+# cusolver, cusparse, nvjitlink, nvtx, cupti, nvrtc) are pulled in
+# by the `cuda-toolkit==13.0.3` meta-package that torch also
+# depends on, so we deliberately do NOT pin them here — pinning
+# them to synthetic `13.0.3.6` style versions is what broke the
+# build originally, because those individual packages don't
+# follow that numbering scheme on PyPI (e.g. nvidia-cublas-cu13
+# only has 0.0.1 + 0.0.0a0; nvidia-cuda-runtime-cu13 the same).
+# Letting `cuda-toolkit` resolve its own internal dependency graph
+# is correct.
+#
+# Versions below mirror torch==2.14.0's own declared constraints
+# (verified against PyPI on 2026-10-17). If you bump torch, re-run
+# the build once, copy the new versions out of the pip log, and
+# update these four lines in lockstep.
+nvidia-cudnn-cu13==9.24.0.43
+nvidia-cusparselt-cu13==0.8.1
+nvidia-nccl-cu13==2.30.7
+nvidia-nvshmem-cu13==3.4.5

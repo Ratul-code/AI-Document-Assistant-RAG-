@@ -1,0 +1,24 @@
+# Optional eval-only dependencies.
+#
+# The core eval harness (run_retrieval_eval.py, seed_corpus.py,
+# build_dataset.py, score.py, mapping.py, schema.py) has no
+# third-party runtime dependencies — it uses only what
+# backend/requirements.txt already pulls in (pydantic, numpy,
+# sqlalchemy, httpx).
+#
+# This file is for the OPTIONAL eval tooling that loads external
+# benchmark data. It is NOT required to run the scoring primitives,
+# and the production app never imports these packages.
+#
+# Install with:
+#     pip install -r requirements-eval.txt
+#
+# Currently used by:
+#   - eval/scripts/doc2dial_loader.py  (downloads the Doc2Dial JSON
+#                                       release to backend/eval/.cache/doc2dial/)
+#   - eval/scripts/build_dataset.py    (reads the cached JSON to
+#                                       build the versioned dataset.json)
+
+# Parquet engine used by `pyarrow` for any tabular data processing
+# and the Doc2Dial JSON loader uses standard library modules.
+pyarrow>=18.0.0

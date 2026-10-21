@@ -1,0 +1,137 @@
+# =============================================================================
+# AI Document Analyser — .gitignore
+#
+# Two hard rules:
+#   1. Never commit secrets (.env, credentials, keys, JWT secrets).
+#   2. Never commit local artifacts (venv, node_modules, build output,
+#      local DBs, tool caches).
+#
+# `.env.example` IS tracked — it is the documented template.
+# =============================================================================
+
+# --- OS / editor ------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- AI / editor tool configs (personal, machine-specific) -----------------
+# These hold local tool settings + bundled binaries (tens of MB). None of
+# them belong in the shared repo.
+.agents/
+.claude/
+.codex/
+.cursor/
+.impeccable/
+.puku-cli/
+skills-lock.json
+.claude/settings.local.json
+.puku-cli/settings.local.json
+
+# --- Secrets / local environment (NEVER commit) ---------------------------
+# `.env.example` is the template and IS tracked.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.json
+credentials.json
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+ENV/
+.mypy_cache/
+.pytype/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# --- Node / Next.js / frontend --------------------------------------------
+node_modules/
+.npm/
+.yarn/
+.pnpm-store/
+.next/
+out/
+.turbo/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+/coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- Local dev databases (NEVER commit) ------------------------------------
+# SQLite dev DBs created by SQLAlchemy on first run, plus the timestamped
+# backups `backend/scripts/wipe_data.sh` writes before clearing tables.
+# None of these belong in the repo — they can be hundreds of MB and they
+# grow with usage.
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+# Explicit glob for the timestamped backup filename pattern; the plain
+# `*.db` above already covers it, but listed for clarity.
+*.db.backup-*
+
+# --- Logs / runtime output -------------------------------------------------
+*.log
+logs/
+!backend/eval/reports/*.md
+
+# --- Eval result artifacts -------------------------------------------------
+# Never committed; the committed long-term record lives in
+# backend/eval/reports/ as curated summaries.
+backend/eval/results/*
+!backend/eval/results/.gitkeep
+# Eval data caches: downloaded datasets cached by the loaders under
+# backend/eval/scripts/ (Doc2Dial zip, etc.). The committed long-term
+# record still lives in backend/eval/reports/ as curated summaries.
+backend/eval/.cache/
+backend/eval/**/__pycache__/
+
+# --- OS / temp -------------------------------------------------------------
+.DS_Store
+Thumbs.db
+tmp/
+temp/
+.cache/
+.parcel-cache/
+.turbo/
+.eslintcache
+
+# --- Stray root-level stub -------------------------------------------------
+# An empty `main.py` left over from an early scaffold attempt. The real
+# entrypoint is `backend/app/main.py`. Keep it out of the repo.
+/main.py

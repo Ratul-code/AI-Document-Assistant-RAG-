@@ -1,0 +1,148 @@
+# =============================================================================
+# AI Document Analyser — development overlay
+#
+# Merged ON TOP of compose.yaml for local development. Adds source
+# bind mounts so Python code edits are picked up without rebuilding
+# the image, plus uvicorn auto-reload for the api.
+#
+# Usage:
+#   docker compose -f compose.yaml -f compose.dev.yaml up --build
+#   docker compose -f compose.yaml -f compose.dev.yaml --profile local-pg up
+#   docker compose -f compose.yaml -f compose.dev.yaml run --rm api alembic current
+#
+# Tip: if you don't want to type the -f flags every time, either
+#   * set COMPOSE_FILE=compose.yaml:compose.dev.yaml in your shell, or
+#   * create a `docker-compose.override.yaml` next to compose.yaml
+#     containing:
+#         include:
+#           - compose.dev.yaml
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # API — bind-mount backend/ for live code reload, enable uvicorn
+  #       --reload.
+  # ---------------------------------------------------------------------------
+  api:
+    volumes:
+      # Bind-mount the source from the host so Python code edits are
+      # picked up after a `docker compose restart api` without
+      # rebuilding the image. The installed Python packages inside
+      # /opt/venv still come from the image — only /app/backend/*.py
+      # is overlaid with the host copy. DEV-ONLY: production uses
+      # compose.prod.yaml which drops this mount entirely.
+      #
+      # `hf_cache:/home/app/.cache/huggingface` is also mounted
+      # here because Compose replaces the entire `volumes:` list
+      # when this overlay defines its own (it does NOT merge
+      # list-typed keys across files) — so we re-declare the
+      # named volume mount from compose.yaml.
+      - ./backend:/app/backend
+      - hf_cache:/home/app/.cache/huggingface
+    # uvicorn auto-reload: restarts the server on .py file changes.
+    # Costs a small amount of startup overhead but is the standard
+    # DX for FastAPI dev. The CMD-aware entrypoint forwards any
+    # extra args to uvicorn, so this Just Works.
+    command: ["api", "--reload"]
+    environment:
+      # Force APP_ENV=dev when this overlay is merged, regardless
+      # of what the host shell has. Cheap belt-and-braces.
+      APP_ENV: dev
+
+  # ---------------------------------------------------------------------------
+  # Worker — same bind-mount so code edits propagate without
+  #          rebuild. Re-declare hf_cache for the same reason.
+  # ---------------------------------------------------------------------------
+  worker:
+    volumes:
+      - ./backend:/app/backend
+      - hf_cache:/home/app/.cache/huggingface
+
+  # ---------------------------------------------------------------------------
+  # Beat — same bind-mount so schedule file changes propagate.
+  # ---------------------------------------------------------------------------
+  beat:
+    volumes:
+      - ./backend:/app/backend
+      - hf_cache:/home/app/.cache/huggingface
+
+  # ---------------------------------------------------------------------------
+  # Frontend — bind-mount the source for live reload, override the
+  #            CMD to `next dev` instead of the production
+  #            `node server.js`. node_modules comes from the image
+  #            (don't bind-mount it — that would hide the host's
+  #            platform-specific binaries from the container).
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      # Override the build args from compose.yaml. `NEXT_PUBLIC_*`
+      # env vars are inlined into the client JS bundle at build
+      # time — the URL ends up baked into the code that runs in
+      # the user's browser. For local dev that browser is on the
+      # host, NOT inside Docker, so it can't resolve the compose
+      # hostname `api`. We pass `http://localhost:8000` here so
+      # the browser can reach the api via the host port we
+      # exposed in compose.yaml.
+      #
+      # You can still override with NEXT_PUBLIC_API_BASE_URL in
+      # your shell if you need a different host (e.g. when
+      # tunneling to a remote backend).
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    volumes:
+      # Bind-mount only the source we want live-reloaded, NOT the
+      # whole ./frontend tree — mounting the whole tree would also
+      # overlay the host's `node_modules/` (built for darwin-arm64)
+      # onto /app, breaking the Linux-native binaries Next needs
+      # and causing `next: not found` / exec format errors.
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/next.config.ts:/app/next.config.ts
+      - ./frontend/postcss.config.mjs:/app/postcss.config.mjs
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/eslint.config.mjs:/app/eslint.config.mjs
+      - ./frontend/package.json:/app/package.json
+      - ./frontend/package-lock.json:/app/package-lock.json
+      # Named volume for node_modules — seeded from the image's
+      # Linux install on first run and persisted across restarts.
+      # Anonymous volumes (`- /app/node_modules`) get clobbered by
+      # the bind-mount of `./frontend` above and end up holding
+      # the host's macOS-native binaries, which can't load on
+      # Linux. A named volume is initialized from the image and
+      # survives, so the container always sees the Linux
+      # node_modules the build produced.
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    # Run the dev server with hot reload. NOTE: `next dev` does NOT
+    # honor the standalone output we configured in next.config.ts
+    # (it builds an in-memory dev server instead), so the
+    # NEXT_PUBLIC_API_BASE_URL build arg still controls what the
+    # client code uses.
+    command: ["npx", "next", "dev", "-H", "0.0.0.0", "-p", "3000"]
+    environment:
+      - NODE_ENV=development
+      # Runtime env — used by SERVER-SIDE code (route handlers,
+      # server components, middleware) that runs inside the
+      # container and can resolve the in-network hostname `api`.
+      # The browser-side bundle uses the value baked in at build
+      # time from the `args:` block above.
+      - API_INTERNAL_BASE_URL=http://api:8000
+      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      # Next.js dev server can be slow to compile on first request.
+      # Give the healthcheck a generous start_period so it doesn't
+      # flap while the route compiles.
+      - NEXT_TELEMETRY_DISABLED=1
+
+# =============================================================================
+# Named volumes (dev-only) — see comment in the frontend service above
+# for why these can't be anonymous.
+# =============================================================================
+volumes:
+  frontend_node_modules:
+    # Seeded from the image on first `up`; reused on every restart.
+    # Holds the Linux-native binaries Next.js needs to run.
+    driver: local
+  frontend_next:
+    # Next.js dev cache. Lives in a volume so HMR state and the
+    # in-memory .next/ build survive container restarts.
+    driver: local

@@ -1,0 +1,32 @@
+# =============================================================================
+# Development & CI tooling (not used at runtime)
+#
+# Installed only in CI and local dev environments. NOT installed in the
+# production Docker image (saves ~50MB of layer size).
+#
+# This is the [dev] section of a typical pyproject.toml, but kept in a
+# separate file because this project doesn't use pyproject.toml for
+# dependency management (it uses requirements.txt).
+#
+# Usage:
+#   Local dev:  pip install -r requirements-dev.txt
+#   CI:         pip install -r requirements-dev.txt  (see .github/workflows/ci.yml)
+# =============================================================================
+
+# --- Linter (replaces flake8 + isort + pyupgrade + many others) ---
+# https://docs.astral.sh/ruff/
+# Fast, written in Rust, 10-100x faster than flake8.
+# Bundles: pycodestyle (E/W), pyflakes (F), isort (I), bugbear (B),
+# comprehensions (C4), pyupgrade (UP), simplify (SIM), and more.
+ruff==0.8.4
+
+# --- Type checker ---
+# https://mypy.readthedocs.io/
+# Validates type hints in your Python code.
+mypy==1.13.0
+
+# --- Type stubs for third-party libraries without inline types ---
+# These provide type information for libraries that don't ship their own.
+types-redis==4.6.0.20241004
+types-requests==2.32.0.20240914
+python-dateutil==2.9.0.post0   # dep of types-*-style packages

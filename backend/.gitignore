@@ -1,0 +1,40 @@
+# Backend-local ignores.  Mirrors the patterns in the root
+# `.gitignore` so a dev who only runs `git status` from inside
+# `backend/` still sees the right things ignored.
+
+# --- Local dev databases (NEVER commit) ---
+# Created on first run by SQLAlchemy, plus the timestamped backups
+# `scripts/wipe_data.sh` writes before clearing tables.
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.db.backup-*
+# Wipe-data script's touchstone
+/freeze
+# Auth smoke test DB
+/auth_smoke.db
+
+# --- Python / virtualenv ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Env / secrets ---
+# The committed template is `.env.example`.  Real `.env` is local-only.
+.env
+.env.*
+!.env.example
+
+# --- Local-only data ---
+# Anything under `.local/` is dev state (DB backups, scratch files,
+# downloads the operator doesn't want in the repo).  Created on
+# demand by `scripts/wipe_data.sh` and by individual dev workflows.
+/.local/

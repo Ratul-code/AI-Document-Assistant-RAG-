@@ -1,0 +1,211 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-scrim: var(--scrim);
+  /* Activity-feed palette — one tinted surface + one foreground per
+   * pipeline stage so the activity log can read at a glance. This is
+   * a data-driven visualization per the design-system exception
+   * (DESIGN.md §4): each color is tied to a backend event category
+   * and never reused as a general UI accent. */
+  --color-log-upload-surface: var(--log-upload-surface);
+  --color-log-upload-foreground: var(--log-upload-foreground);
+  --color-log-download-surface: var(--log-download-surface);
+  --color-log-download-foreground: var(--log-download-foreground);
+  --color-log-parse-surface: var(--log-parse-surface);
+  --color-log-parse-foreground: var(--log-parse-foreground);
+  --color-log-chunk-surface: var(--log-chunk-surface);
+  --color-log-chunk-foreground: var(--log-chunk-foreground);
+  --color-log-embed-surface: var(--log-embed-surface);
+  --color-log-embed-foreground: var(--log-embed-foreground);
+  --color-log-ready-surface: var(--log-ready-surface);
+  --color-log-ready-foreground: var(--log-ready-foreground);
+  --color-log-failed-surface: var(--log-failed-surface);
+  --color-log-failed-foreground: var(--log-failed-foreground);
+  --color-log-info-surface: var(--log-info-surface);
+  --color-log-info-foreground: var(--log-info-foreground);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* Light theme — monochromatic foundation, lime-green brand accent. */
+  --background: oklch(0.9851 0 0);
+  --foreground: oklch(0.1776 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.1776 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.1776 0 0);
+  --primary: oklch(0.8444 0.2084 130);
+  --primary-foreground: oklch(0.1776 0 0);
+  --secondary: oklch(0.9674 0.0013 165);
+  --secondary-foreground: oklch(0.2103 0.0059 158.66);
+  --muted: oklch(0.9674 0.0013 165);
+  --muted-foreground: oklch(0.5517 0.0138 159.37);
+  --accent: oklch(0.9605 0.0331 130);
+  --accent-foreground: oklch(0.2103 0.0059 158.66);
+  --destructive: oklch(0.5771 0.2152 29.6);
+  --border: oklch(0.9197 0.0040 164.32);
+  --input: oklch(0.9197 0.0040 164.32);
+  --ring: oklch(0.8444 0.2084 130);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.9761 0 0);
+  --sidebar-foreground: oklch(0.2103 0.0059 158.66);
+  --sidebar-primary: oklch(0.8444 0.2084 130);
+  --sidebar-primary-foreground: oklch(0.1776 0 0);
+  --sidebar-accent: oklch(0.9494 0.0013 165);
+  --sidebar-accent-foreground: oklch(0.2103 0.0059 158.66);
+  --sidebar-border: oklch(0.9197 0.0040 164.32);
+  --sidebar-ring: oklch(0.8444 0.2084 130);
+  --scrim: oklch(0 0 0 / 0.6);
+
+  /* Activity-feed palette (light) — soft tinted surfaces at ~12% chroma,
+   * stronger foreground tints for the icons. Hues are spaced around the
+   * wheel so the categories stay distinguishable when scanned
+   * vertically; chroma is kept low so the row text (foreground
+   * against the dialog's card surface) remains the primary signal. */
+  --log-upload-surface: oklch(0.9550 0.0240 240);
+  --log-upload-foreground: oklch(0.4520 0.1320 245);
+  --log-download-surface: oklch(0.9530 0.0220 200);
+  --log-download-foreground: oklch(0.4500 0.1080 215);
+  --log-parse-surface: oklch(0.9530 0.0260 290);
+  --log-parse-foreground: oklch(0.4300 0.1400 295);
+  --log-chunk-surface: oklch(0.9520 0.0280 330);
+  --log-chunk-foreground: oklch(0.4500 0.1450 340);
+  --log-embed-surface: oklch(0.9450 0.0500 150);
+  --log-embed-foreground: oklch(0.5200 0.1400 150);
+  --log-ready-surface: oklch(0.9500 0.0400 155);
+  --log-ready-foreground: oklch(0.5200 0.1500 155);
+  --log-failed-surface: oklch(0.9500 0.0250 25);
+  --log-failed-foreground: oklch(0.5200 0.1900 25);
+  --log-info-surface: oklch(0.9520 0.0120 250);
+  --log-info-foreground: oklch(0.4200 0.0200 255);
+}
+
+.dark {
+  /* Dark theme — near-black surface, lime-green brand accent. */
+  --background: oklch(0.1408 0.0044 157.83);
+  --foreground: oklch(0.9851 0 0);
+  --card: oklch(0.1785 0.0041 159.93);
+  --card-foreground: oklch(0.9851 0 0);
+  --popover: oklch(0.1785 0.0041 159.93);
+  --popover-foreground: oklch(0.9851 0 0);
+  --primary: oklch(0.8444 0.2084 130);
+  --primary-foreground: oklch(0.1408 0.0044 157.83);
+  --secondary: oklch(0.2103 0.0059 158.66);
+  --secondary-foreground: oklch(0.9674 0.0013 165);
+  --muted: oklch(0.2103 0.0059 158.66);
+  --muted-foreground: oklch(0.7118 0.0129 161.06);
+  --accent: oklch(0.2353 0.0323 130);
+  --accent-foreground: oklch(0.9267 0.1364 130);
+  --destructive: oklch(0.6368 0.2078 27.12);
+  --border: oklch(0.2739 0.0055 160.61);
+  --input: oklch(0.2739 0.0055 160.61);
+  --ring: oklch(0.8444 0.2084 130);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.1553 0.0042 158.84);
+  --sidebar-foreground: oklch(0.9674 0.0013 165);
+  --sidebar-primary: oklch(0.8444 0.2084 130);
+  --sidebar-primary-foreground: oklch(0.1408 0.0044 157.83);
+  --sidebar-accent: oklch(0.2103 0.0059 158.66);
+  --sidebar-accent-foreground: oklch(0.9851 0 0);
+  --sidebar-border: oklch(0.2739 0.0055 160.61);
+  --sidebar-ring: oklch(0.8444 0.2084 130);
+  --scrim: oklch(0 0 0 / 0.6);
+
+  /* Activity-feed palette (dark) — same hue family per category as the
+   * light theme, but with darker surfaces (~22% lightness) and brighter
+   * foregrounds (~75% lightness) so the colored tint reads on the
+   * near-black dialog surface. Chroma stays close to the light-theme
+   * values to keep the category identity consistent across themes. */
+  --log-upload-surface: oklch(0.2200 0.0400 240);
+  --log-upload-foreground: oklch(0.7800 0.1400 245);
+  --log-download-surface: oklch(0.2200 0.0380 200);
+  --log-download-foreground: oklch(0.7700 0.1180 215);
+  --log-parse-surface: oklch(0.2250 0.0450 290);
+  --log-parse-foreground: oklch(0.7600 0.1480 295);
+  --log-chunk-surface: oklch(0.2250 0.0480 330);
+  --log-chunk-foreground: oklch(0.7700 0.1520 340);
+  --log-embed-surface: oklch(0.2300 0.0600 150);
+  --log-embed-foreground: oklch(0.8200 0.1500 150);
+  --log-ready-surface: oklch(0.2300 0.0500 155);
+  --log-ready-foreground: oklch(0.8200 0.1600 155);
+  --log-failed-surface: oklch(0.2350 0.0500 25);
+  --log-failed-foreground: oklch(0.7800 0.1900 25);
+  --log-info-surface: oklch(0.2200 0.0180 250);
+  --log-info-foreground: oklch(0.7400 0.0300 255);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

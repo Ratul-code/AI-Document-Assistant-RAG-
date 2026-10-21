@@ -1,0 +1,50 @@
+# Files/dirs that should never end up in the FRONTEND Docker build
+# context. Smaller context = faster builds + smaller chance of
+# leaking secrets. Mirrors the pattern in the root .dockerignore,
+# scoped to this subproject.
+
+# --- VCS ---
+.git
+.gitignore
+.gitattributes
+.github
+
+# --- Editor / OS noise ---
+.DS_Store
+.idea
+.vscode
+.cursor
+*.swp
+*.swo
+Thumbs.db
+
+# --- Secrets / local config (NEVER bake into an image) ---
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+!.env.example
+*.pem
+*.key
+
+# --- Build artifacts (rebuilt inside the image) ---
+.next
+node_modules
+out
+build
+dist
+
+# --- Tests / coverage / type-check cache ---
+coverage
+*.tsbuildinfo
+next-env.d.ts.bak
+
+# --- Docs / tool metadata (not needed at runtime) ---
+README.md
+docs
+.impeccable
+.agents
+.claude
+.codex
+.puku-cli

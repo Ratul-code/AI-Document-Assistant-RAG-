@@ -1,0 +1,290 @@
+# =============================================================================
+# AI Document Analyser — base compose file (shared)
+#
+# This file holds the COMMON service definitions used by BOTH
+# development and production. It is intentionally environment-agnostic:
+#   * No source bind mounts
+#   * No `profiles` toggles
+#   * No environment-specific commands or image tags
+#
+# It is meant to be combined with one of the overlay files:
+#
+#   Development:
+#     docker compose -f compose.yaml -f compose.dev.yaml up --build
+#
+#   Production:
+#     docker compose -f compose.yaml -f compose.prod.yaml up -d
+#
+# Why split instead of one file with profiles?
+#   * Splitting makes it impossible to accidentally ship a dev bind
+#     mount to production, or to forget to pin an image tag in prod.
+#   * Each overlay can be reviewed in isolation — a security review
+#     only needs to look at compose.prod.yaml.
+#   * It matches the layout the team already uses for the Dockerfile
+#     (multi-stage) and the requirements split.
+#
+# Five services:
+#   * api      — FastAPI over uvicorn (HTTP, port 8000)
+#   * worker   — Celery worker (executes background tasks)
+#   * beat     — Celery beat (schedules periodic tasks)
+#   * redis    — message broker + result backend for Celery
+#   * postgres — local Postgres (gated by the `local-pg` profile; off
+#                by default. The api/worker/beat point at Supabase
+#                via DATABASE_URL from backend/.env unless LOCAL_PG
+#                is set.)
+#   * frontend — Next.js standalone server (HTTP, port 3000). Lives
+#                on the same `appnet` network so the browser-side
+#                code can reach the backend at http://api:8000.
+#                `NEXT_PUBLIC_API_BASE_URL` is baked in at build
+#                time via the `args` block below.
+# =============================================================================
+
+name: ai-doc-analyser
+
+services:
+  # ---------------------------------------------------------------------------
+  # API — FastAPI served by uvicorn
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-doc-analyser-backend:latest
+    container_name: ai_doc_api
+    restart: unless-stopped
+    # Override the Dockerfile's default CMD. Dev overlays may append
+    # `--reload`; prod leaves this as-is.
+    command: ["api"]
+    env_file:
+      # Load all existing secrets / config from backend/.env. Anything
+      # listed in `environment:` below takes precedence and is what
+      # actually points the api at the in-container redis.
+      - backend/.env
+    environment:
+      # --- The only critical Docker-specific override ---
+      # Inside the compose network, the redis container's hostname IS
+      # "redis". Everything else (DATABASE_URL, JWT_SECRET, LLM keys,
+      # etc.) comes from backend/.env and points at your real Supabase
+      # Postgres.
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # Same in-container override for the WS pub/sub subscriber.
+      # backend/.env defaults REDIS_URL to localhost:6379/1, which
+      # doesn't exist inside the api container — pointing it at the
+      # redis service makes the Celery→WebSocket event fan-out work
+      # end-to-end. The /1 db matches the default in
+      # app/core/config.py so the api/worker agree on the channel
+      # without a separate env var.
+      REDIS_URL: redis://redis:6379/1
+      # Make sure Python can find the `app` package wherever it's
+      # mounted. /app/backend is the WORKDIR + copy location set in
+      # the Dockerfile; this lets `from app...` imports resolve
+      # regardless of which directory the process is started from.
+      PYTHONPATH: /app/backend
+      # APP_ENV flips config defaults; "prod" turns debug off, etc.
+      # Overlays (compose.prod.yaml) override this to "prod".
+      APP_ENV: ${APP_ENV:-dev}
+    ports:
+      # host:container. Change the left side if 8000 is taken on the
+      # host. In dev this is the only externally exposed port.
+      - "8000:8000"
+    volumes:
+      # Persist HuggingFace / sentence-transformers model cache so the
+      # ~1.2GB download only happens once. Lives on the host in the
+      # compose-managed volume `hf_cache`. Both the api (for any
+      # in-process embed calls) and the worker/beat (for model loads
+      # inside Celery tasks) need this.
+      - hf_cache:/home/app/.cache/huggingface
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # FastAPI serves the OpenAPI schema at `/openapi.json` (NOT
+      # under the /api/v1 prefix — that prefix is for our hand-
+      # written routers; the auto-generated schema is at the root).
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/openapi.json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - appnet
+
+  # ---------------------------------------------------------------------------
+  # Celery worker
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-doc-analyser-backend:latest
+    container_name: ai_doc_worker
+    restart: unless-stopped
+    command: ["worker"]
+    env_file:
+      - backend/.env
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/1
+      PYTHONPATH: /app/backend
+      APP_ENV: ${APP_ENV:-dev}
+    volumes:
+      - hf_cache:/home/app/.cache/huggingface
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        # Wait for api to be healthy before worker starts handling
+        # tasks, so the schema is guaranteed migrated and the app is
+        # loaded.
+        condition: service_healthy
+    networks:
+      - appnet
+
+  # ---------------------------------------------------------------------------
+  # Celery beat (scheduler)
+  # ---------------------------------------------------------------------------
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-doc-analyser-backend:latest
+    container_name: ai_doc_beat
+    restart: unless-stopped
+    command: ["beat"]
+    env_file:
+      - backend/.env
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/1
+      PYTHONPATH: /app/backend
+      APP_ENV: ${APP_ENV:-dev}
+    volumes:
+      - hf_cache:/home/app/.cache/huggingface
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - appnet
+
+  # ---------------------------------------------------------------------------
+  # Redis — message broker + result backend
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: ai_doc_redis
+    restart: unless-stopped
+    # Reasonable defaults for a small app. Tune for production.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - appnet
+
+  # ---------------------------------------------------------------------------
+  # Postgres — local DB (optional; off by default)
+  # ---------------------------------------------------------------------------
+  # Activate by running with the local-pg profile:
+  #   docker compose -f compose.yaml -f compose.dev.yaml --profile local-pg up
+  # Then set LOCAL_PG=true in your shell or root .env to flip the
+  # api/worker/beat to use it instead of Supabase. The default is
+  # OFF so the common case is `up` and go.
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai_doc_postgres
+    restart: unless-stopped
+    profiles: ["local-pg"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_doc_analyser}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ai_doc_analyser}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - appnet
+
+  # ---------------------------------------------------------------------------
+  # Frontend — Next.js standalone server
+  # ---------------------------------------------------------------------------
+  # Reaches the backend via the in-network hostname `api` (defined
+  # above). The browser-side bundle gets that URL baked in at
+  # `next build` time via NEXT_PUBLIC_API_BASE_URL — see the
+  # `args:` block under `build:`. The compose-network hostname
+  # `api` is the right thing for a containerized browser-side call:
+  # the request originates from the user's browser, hits this
+  # frontend container's exposed port (3000), and the Next.js
+  # server-side code then proxies/connects to `api:8000` over the
+  # Docker network.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the JS bundle at build time. `http://api:8000`
+        # resolves to the `api` service on the `appnet` network.
+        # Override at build time with e.g.
+        #   docker compose build --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.example.com
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://api:8000}
+    image: ai-doc-analyser-frontend:latest
+    container_name: ai_doc_frontend
+    restart: unless-stopped
+    ports:
+      # host:container. Change the left side if 3000 is taken.
+      - "3000:3000"
+    environment:
+      # Server-side runtime config. NEXT_PUBLIC_* is inlined at
+      # build time, but the same value is also set here so any
+      # server-side code (route handlers, middleware) sees it.
+      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-http://api:8000}
+      # Non-NEXT_PUBLIC_ var, server-only. Read by server-side
+      # code (RSC layouts, route handlers) so it can resolve the
+      # in-network backend address rather than the browser-facing
+      # one. In compose, all backend traffic goes through the
+      # `appnet` network by service name, so http://api:8000 is
+      # correct for both dev and prod. The browser never sees this
+      # value (Next.js swaps it to `undefined` in client bundles).
+      - API_INTERNAL_BASE_URL=${API_INTERNAL_BASE_URL:-http://api:8000}
+      - NODE_ENV=production
+    depends_on:
+      api:
+        # Wait for the backend to be healthy before starting the
+        # frontend, so a freshly-cloned dev environment doesn't
+        # serve traffic pointing at a not-yet-migrated API.
+        condition: service_healthy
+    networks:
+      - appnet
+
+# =============================================================================
+# Named volumes — persist data across `docker compose down` (without -v)
+# =============================================================================
+volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  hf_cache:
+    # HuggingFace model cache. Survives rebuilds; nuked by `down -v`.
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  appnet:
+    driver: bridge

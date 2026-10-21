@@ -1,0 +1,97 @@
+# =============================================================================
+# Backend dev-tool configuration
+#
+# This file holds CONFIGURATION (not dependencies). Dependencies are
+# managed via requirements*.txt files. This is a deliberate split:
+#   - requirements.txt      → runtime deps
+#   - requirements-ml.txt   → ML deps
+#   - requirements-eval.txt → eval deps
+#   - requirements-dev.txt  → CI/dev tools (ruff, mypy, ...)
+#   - pyproject.toml        → tool config (this file)
+#
+# If you ever migrate to PEP 621, the [project] table goes here too.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Ruff (linter + formatter)
+# https://docs.astral.sh/ruff/
+#
+# Ruff is a Rust-based linter that replaces flake8 + isort + pyupgrade + ...
+# It's 10-100x faster and the config is much simpler.
+# -----------------------------------------------------------------------------
+[tool.ruff]
+# Match the line length that the rest of the codebase appears to use.
+# (Quick way to check: pick a long line and count.)
+line-length = 100
+target-version = "py312"
+# Exclude generated files, venvs, and Alembic auto-generated migrations.
+extend-exclude = [
+    ".venv",
+    "alembic/versions",
+    "__pycache__",
+    ".pytest_cache",
+    "eval/.cache",
+    "eval/reports",
+]
+
+[tool.ruff.lint]
+# Rule families to enable:
+#   E/W   → pycodestyle (PEP 8 style)
+#   F     → pyflakes (unused imports, undefined names, ...)
+#   I     → isort (import sorting)
+#   B     → bugbear (common bugs)
+#   UP    → pyupgrade (modernize syntax for the target Python version)
+#   SIM   → simplify (common simplifications)
+#   C4    → comprehensions (use list/dict comprehensions)
+#   N     → pep8-naming
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "C4", "N"]
+# Rules we deliberately ignore (with a reason for each):
+ignore = [
+    "E501",   # line too long — handled by formatter, not a real bug
+    "B008",   # function call in default argument — common in FastAPI Depends()
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests are allowed to be a bit messier (long lines, unused imports for fixtures).
+"tests/**/*.py" = ["E402", "F401", "B011"]
+# Alembic migrations are auto-generated; don't lint them.
+"alembic/**/*.py" = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.format]
+# Use double quotes (matches the existing codebase style).
+quote-style = "double"
+indent-style = "space"
+
+# -----------------------------------------------------------------------------
+# mypy (static type checker)
+# https://mypy.readthedocs.io/
+#
+# This is intentionally LENIENT for now. We want CI to be green quickly
+# and tighten type checking incrementally. Each flag has a comment.
+# -----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+# Don't check files we don't own (migrations, eval, tests at the start).
+# Tighten this over time as you fix issues.
+files = ["app"]
+# Be lenient on missing type stubs for third-party libs (FastAPI, SQLAlchemy,
+# Celery all have decent stubs but some transitive deps don't).
+ignore_missing_imports = true
+# Don't fail on untyped function definitions — we'll add them as we go.
+disallow_untyped_defs = false
+# Warn but don't fail on missing return type annotations.
+warn_return_any = false
+# Show column numbers in errors so editors can jump to them.
+show_column_numbers = true
+# Show absolute paths in error messages (helps in CI logs).
+show_absolute_path = true
+# Color output for local dev (CI doesn't need this).
+color_output = true
+# Cache mypy results in .mypy_cache for 10x faster subsequent runs.
+cache_dir = ".mypy_cache"
+
+[[tool.mypy.overrides]]
+# Tests are looser — we don't require all fixtures to be fully typed.
+module = "tests.*"
+disallow_untyped_defs = false
+ignore_missing_imports = true
