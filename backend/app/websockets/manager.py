@@ -19,6 +19,7 @@ import logging
 from collections import defaultdict
 from typing import Any
 from uuid import UUID
+
 from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
@@ -149,7 +150,7 @@ class ConnectionManager:
                     # walk _connections defensively so a future
                     # refactor that allows a socket to be in multiple
                     # users' sets still cleans up correctly.
-                    for user_id, user_sockets in self._connections.items():
+                    for _user_id, user_sockets in self._connections.items():
                         user_sockets.discard(ws)
                     # Tidy: drop users with no sockets left.
                     empty_users = [u for u, s in self._connections.items() if not s]

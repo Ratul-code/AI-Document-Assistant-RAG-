@@ -15,8 +15,9 @@ Why not reuse the async engine?
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Any, Callable, Iterator, TypeVar
+from typing import Any, TypeVar
 
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
@@ -43,7 +44,7 @@ def _to_sync_url(url: str) -> str:
     need handling here when they show up.
     """
     if url.startswith("sqlite+aiosqlite:///"):
-        return "sqlite:///" + url[len("sqlite+aiosqlite:///"):]
+        return "sqlite:///" + url[len("sqlite+aiosqlite:///") :]
     return url
 
 
@@ -120,6 +121,7 @@ def _build_sync_engine() -> Engine:
             # deleted in dev (SQLite). Postgres enforces cascades
             # natively, so this is a no-op for it.
             if is_sqlite:
+
                 @event.listens_for(engine, "connect")
                 def _enable_sqlite_fks(dbapi_connection, _connection_record):  # noqa: ANN001
                     cursor = dbapi_connection.cursor()
@@ -127,6 +129,7 @@ def _build_sync_engine() -> Engine:
                         cursor.execute("PRAGMA foreign_keys=ON")
                     finally:
                         cursor.close()
+
             # Liveness probe — open one connection and run SELECT 1.
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
@@ -136,8 +139,7 @@ def _build_sync_engine() -> Engine:
             continue
 
     raise RuntimeError(
-        f"No usable sync database URL. Tried: {candidates!r}. "
-        f"Last error: {last_err!r}"
+        f"No usable sync database URL. Tried: {candidates!r}. " f"Last error: {last_err!r}"
     )
 
 

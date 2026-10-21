@@ -31,7 +31,7 @@ def main() -> None:
 
     chunks = [
         "The cat sat on the mat.",
-        "A kitten was resting on the rug.",            # paraphrase of [0]
+        "A kitten was resting on the rug.",  # paraphrase of [0]
         "Quantum mechanics describes subatomic particles.",  # unrelated
         "Stocks rallied after the Fed announcement.",  # unrelated
     ]

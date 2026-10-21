@@ -69,12 +69,14 @@ def test_health_ready_all_up_returns_200(client: TestClient) -> None:
     """
     fake_ok = (True, "stub ok")
 
-    with patch("app.api.v1.endpoints.health._sync_redis_ping", return_value=fake_ok), \
-         patch("app.api.v1.endpoints.health._sync_celery_ping", return_value=fake_ok), \
-         patch(
-             "app.api.v1.endpoints.health._async_llm_probe",
-             new=_async_return_ok,
-         ):
+    with (
+        patch("app.api.v1.endpoints.health._sync_redis_ping", return_value=fake_ok),
+        patch("app.api.v1.endpoints.health._sync_celery_ping", return_value=fake_ok),
+        patch(
+            "app.api.v1.endpoints.health._async_llm_probe",
+            new=_async_return_ok,
+        ),
+    ):
         resp = client.get("/api/v1/health/ready")
 
     assert resp.status_code == 200, resp.text
@@ -96,12 +98,14 @@ def test_health_ready_redis_down_returns_503(client: TestClient) -> None:
     fake_ok = (True, "stub ok")
     redis_down = (False, "ConnectionError: refused")
 
-    with patch("app.api.v1.endpoints.health._sync_redis_ping", return_value=redis_down), \
-         patch("app.api.v1.endpoints.health._sync_celery_ping", return_value=fake_ok), \
-         patch(
-             "app.api.v1.endpoints.health._async_llm_probe",
-             new=_async_return_ok,
-         ):
+    with (
+        patch("app.api.v1.endpoints.health._sync_redis_ping", return_value=redis_down),
+        patch("app.api.v1.endpoints.health._sync_celery_ping", return_value=fake_ok),
+        patch(
+            "app.api.v1.endpoints.health._async_llm_probe",
+            new=_async_return_ok,
+        ),
+    ):
         resp = client.get("/api/v1/health/ready")
 
     assert resp.status_code == 503
@@ -123,9 +127,11 @@ def test_health_ready_llm_down_returns_503(client: TestClient) -> None:
     async def _llm_4xx(*_args, **_kwargs):
         return (False, "HTTP 500")
 
-    with patch("app.api.v1.endpoints.health._sync_redis_ping", return_value=fake_ok), \
-         patch("app.api.v1.endpoints.health._sync_celery_ping", return_value=fake_ok), \
-         patch("app.api.v1.endpoints.health._async_llm_probe", new=_llm_4xx):
+    with (
+        patch("app.api.v1.endpoints.health._sync_redis_ping", return_value=fake_ok),
+        patch("app.api.v1.endpoints.health._sync_celery_ping", return_value=fake_ok),
+        patch("app.api.v1.endpoints.health._async_llm_probe", new=_llm_4xx),
+    ):
         resp = client.get("/api/v1/health/ready")
 
     assert resp.status_code == 503
@@ -143,12 +149,14 @@ def test_health_ready_celery_probe_raising_does_not_500(client: TestClient) -> N
     def _celery_raises() -> tuple[bool, str | None]:
         raise RuntimeError("broker exploded")
 
-    with patch("app.api.v1.endpoints.health._sync_redis_ping", return_value=fake_ok), \
-         patch("app.api.v1.endpoints.health._sync_celery_ping", side_effect=_celery_raises), \
-         patch(
-             "app.api.v1.endpoints.health._async_llm_probe",
-             new=_async_return_ok,
-         ):
+    with (
+        patch("app.api.v1.endpoints.health._sync_redis_ping", return_value=fake_ok),
+        patch("app.api.v1.endpoints.health._sync_celery_ping", side_effect=_celery_raises),
+        patch(
+            "app.api.v1.endpoints.health._async_llm_probe",
+            new=_async_return_ok,
+        ),
+    ):
         resp = client.get("/api/v1/health/ready")
 
     assert resp.status_code == 503

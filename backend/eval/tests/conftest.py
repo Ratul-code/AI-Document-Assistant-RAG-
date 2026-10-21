@@ -39,6 +39,7 @@ def _reset_globals():
     # publisher again. Imports are lazy because `_db` is optional.
     try:
         from eval.scripts._db import unpatch_pubsub
+
         unpatch_pubsub()
     except ImportError:
         # `_db.py` not yet implemented — fine, nothing to clean up.

@@ -40,7 +40,6 @@ from app.db.session import get_session_factory
 from app.main import create_app
 from app.models.document import Document, DocumentStatus
 
-
 client = TestClient(create_app())
 
 
@@ -189,14 +188,12 @@ def test_download_other_users_doc_returns_404(monkeypatch) -> None:
 
     doc_id = asyncio.run(_seed_doc(owner_b))
     r = c_a.get(f"/api/v1/documents/{doc_id}/download")
-    assert r.status_code == 404, (
-        f"expected 404 for cross-owner download, got {r.status_code}: {r.text}"
-    )
+    assert (
+        r.status_code == 404
+    ), f"expected 404 for cross-owner download, got {r.status_code}: {r.text}"
     # Critical: storage was never queried — the auth check happens
     # before the storage call.
-    assert fake.calls == [], (
-        f"storage was called for a cross-owner request: {fake.calls}"
-    )
+    assert fake.calls == [], f"storage was called for a cross-owner request: {fake.calls}"
 
 
 def test_view_other_users_doc_returns_404(monkeypatch) -> None:
@@ -233,9 +230,7 @@ def test_download_happy_path_returns_attachment(monkeypatch) -> None:
     assert r.headers["content-type"].startswith("application/pdf")
     # The header carries the original filename in quotes (single header
     # for simple ASCII; browsers handle RFC 5987 only for non-ASCII).
-    assert r.headers["content-disposition"] == (
-        f'attachment; filename="quarterly report.pdf"'
-    )
+    assert r.headers["content-disposition"] == ('attachment; filename="quarterly report.pdf"')
     # Storage was hit with the doc's (bucket, path).
     assert fake.calls == [("doc-uploads", storage_path)]
 
@@ -257,9 +252,7 @@ def test_view_happy_path_returns_inline(monkeypatch) -> None:
     assert r.status_code == 200, r.text
     assert r.content == payload
     assert r.headers["content-type"].startswith("text/plain")
-    assert r.headers["content-disposition"] == (
-        f'inline; filename="report.pdf"'
-    )
+    assert r.headers["content-disposition"] == ('inline; filename="report.pdf"')
     assert fake.calls == [("doc-uploads", storage_path)]
 
 
@@ -339,9 +332,7 @@ def test_download_filename_sanitised(monkeypatch) -> None:
     assert r.status_code == 200, r.text
     cd = r.headers["content-disposition"]
     # (a) No CRLF anywhere in the header.
-    assert "\r" not in cd and "\n" not in cd, (
-        f"CRLF leaked into Content-Disposition: {cd!r}"
-    )
+    assert "\r" not in cd and "\n" not in cd, f"CRLF leaked into Content-Disposition: {cd!r}"
     # (b) The unescaped `"` (which would close the quoted-string) is
     # gone — the header has exactly ONE `"` pair surrounding the value.
     # Split off the `attachment; filename="` prefix and the trailing `"`
@@ -349,10 +340,8 @@ def test_download_filename_sanitised(monkeypatch) -> None:
     prefix = 'attachment; filename="'
     assert cd.startswith(prefix)
     assert cd.endswith('"')
-    value = cd[len(prefix):-1]
-    assert '"' not in value, (
-        f'unescaped quote inside filename value: {value!r}'
-    )
+    value = cd[len(prefix) : -1]
+    assert '"' not in value, f"unescaped quote inside filename value: {value!r}"
 
 
 def test_download_storage_failure_returns_502(monkeypatch) -> None:

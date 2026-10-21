@@ -44,7 +44,6 @@ from __future__ import annotations
 
 import re
 import secrets
-from typing import Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -83,7 +82,7 @@ def _generate_request_id() -> str:
     return secrets.token_urlsafe(_GENERATED_LEN)
 
 
-def _resolve_request_id(incoming: Optional[str]) -> str:
+def _resolve_request_id(incoming: str | None) -> str:
     """Return the incoming header value if it looks safe; else mint one.
 
     `getattr(request.headers, ...)` style is verbose; this is the
@@ -140,9 +139,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             request.state.request_id = ""
             return await call_next(request)
 
-        request_id = _resolve_request_id(
-            request.headers.get(self._header_name)
-        )
+        request_id = _resolve_request_id(request.headers.get(self._header_name))
         # Stash for handlers that want it. Naming it `request_id` (not
         # the full header name) keeps handler code clean.
         request.state.request_id = request_id

@@ -50,10 +50,8 @@ class ConversationDocument(Base):
     )
 
     # Relationships.
-    conversation: Mapped["Conversation"] = relationship(
-        back_populates="documents", lazy="raise"
-    )
-    document: Mapped["Document"] = relationship(lazy="raise")
+    conversation: Mapped[Conversation] = relationship(back_populates="documents", lazy="raise")
+    document: Mapped[Document] = relationship(lazy="raise")
 
     __table_args__ = (
         # Reverse lookup: which conversations use this document?

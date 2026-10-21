@@ -99,10 +99,10 @@ def test_read_manifest_round_trip(tmp_path: Path) -> None:
 def test_persisted_engine_creates_schema(tmp_path: Path) -> None:
     """Sanity: `persisted_engine(path)` + `Base.metadata.create_all`
     produces tables we can SELECT from."""
-    from sqlalchemy.orm import sessionmaker, Session
+    from sqlalchemy.orm import Session, sessionmaker
 
-    from eval.scripts._db import persisted_engine
     from app.models.document import Document
+    from eval.scripts._db import persisted_engine
 
     db_path = tmp_path / "corpus.db"
     engine = persisted_engine(db_path)

@@ -22,31 +22,23 @@ class RefreshToken(Base):
         index=True,
         nullable=False,
     )
-    token_hash: Mapped[str] = mapped_column(
-        String(255), unique=True, index=True, nullable=False
-    )
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     family_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
 
-    expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    revoked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     replaced_by_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("refresh_tokens.id", ondelete="SET NULL"),
         nullable=True,
     )
 
-    user: Mapped["User"] = relationship(back_populates="refresh_tokens")
-    replaced_by: Mapped["RefreshToken | None"] = relationship(
+    user: Mapped[User] = relationship(back_populates="refresh_tokens")
+    replaced_by: Mapped[RefreshToken | None] = relationship(
         remote_side="RefreshToken.id",
         uselist=False,
     )

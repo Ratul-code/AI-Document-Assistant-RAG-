@@ -24,8 +24,8 @@ from uuid import UUID, uuid4
 from app.models.document_page import DocumentPage
 from app.repositories.document_chunk import ChunkSpec
 
-from .section_tracker import SectionTracker
 from . import split_text
+from .section_tracker import SectionTracker
 
 
 def build_chunks_for_page(page: DocumentPage) -> list[ChunkSpec]:
@@ -44,9 +44,7 @@ def build_chunks_for_page(page: DocumentPage) -> list[ChunkSpec]:
     # Precompute normalized heading text once. Dict lookup avoids an
     # O(headings × paragraphs) inner loop.
     pending_headings: dict[str, dict] = {
-        _normalize(h.get("text", "")): h
-        for h in headings
-        if _normalize(h.get("text", ""))
+        _normalize(h.get("text", "")): h for h in headings if _normalize(h.get("text", ""))
     }
 
     paragraphs = _split_into_paragraphs(text)
@@ -116,10 +114,7 @@ def _extract_headings(page: DocumentPage) -> list[dict]:
     raw = page.page_metadata.get("headings")
     if not isinstance(raw, list):
         return []
-    return [
-        h for h in raw
-        if isinstance(h, dict) and isinstance(h.get("level"), int)
-    ]
+    return [h for h in raw if isinstance(h, dict) and isinstance(h.get("level"), int)]
 
 
 def _split_into_paragraphs(text: str) -> list[str]:
@@ -151,7 +146,7 @@ def _best_path_for_chunk(
     snippet = chunk_text.lstrip().split("\n\n", 1)[0].strip()
     snippet_norm = _normalize(snippet)[:80]
     if snippet_norm:
-        for prefix, path in zip(block_prefixes, paths):
+        for prefix, path in zip(block_prefixes, paths, strict=False):
             if prefix and snippet_norm in prefix:
                 return list(path)
     return list(paths[-1]) if paths else []

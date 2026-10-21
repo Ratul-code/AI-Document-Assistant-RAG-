@@ -20,7 +20,7 @@ it (with `owner_id`) for "sort by recent".
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -60,9 +60,7 @@ class Conversation(Base):
     # When True, retrieval for this conversation ignores the
     # `ConversationDocument` join table and searches every READY doc the
     # owner has at query time.
-    scope_all_documents: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    scope_all_documents: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Denormalised "most recent activity" timestamp. Updated by the
     # message-write path on each new `ConversationMessage` insert.
@@ -78,7 +76,7 @@ class Conversation(Base):
     #    knowing the application code.
     last_message_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         server_default=func.now(),
         nullable=False,
     )
@@ -95,13 +93,13 @@ class Conversation(Base):
 
     # Relationships. lazy="raise" so a missing eager-load is loud rather
     # than silently N+1'ing.
-    owner: Mapped["User"] = relationship(back_populates="conversations", lazy="raise")
-    documents: Mapped[list["ConversationDocument"]] = relationship(
+    owner: Mapped[User] = relationship(back_populates="conversations", lazy="raise")
+    documents: Mapped[list[ConversationDocument]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
         lazy="raise",
     )
-    messages: Mapped[list["ConversationMessage"]] = relationship(
+    messages: Mapped[list[ConversationMessage]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
         lazy="raise",

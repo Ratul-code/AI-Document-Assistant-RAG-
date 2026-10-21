@@ -40,7 +40,7 @@ yet. That's the next step.
 import asyncio
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -51,12 +51,11 @@ from app.api.dependencies import CurrentUserDep, DbDep
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
 from app.models.document import Document, DocumentStatus
+from app.models.document_log import DocumentLog
 from app.repositories import document as document_repo
 from app.repositories import document_log as document_log_repo
 from app.repositories import document_stats as document_stats_repo
 from app.repositories.document_log import add_log_async
-from app.models.document_log import DocumentLog
-from app.services.pubsub.ws_publisher import publish_document_log
 from app.schemas.document import (
     ConfirmUploadResponse,
     DocumentListItem,
@@ -70,11 +69,10 @@ from app.schemas.document import (
 from app.schemas.document_log import DocumentLogItem, DocumentLogListResponse
 from app.schemas.ws_events import document_status_event
 from app.services.document.upload_validation import validate_upload_intent
+from app.services.pubsub.ws_publisher import publish_document_log
 from app.services.storage.supabase_client import get_supabase_storage
 from app.tasks.celery import celery_app
 from app.websockets.manager import get_connection_manager
-
-
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +82,7 @@ router = APIRouter()
 # ----------------------------------------------------------------------
 # POST /api/v1/documents/upload-intent
 # ----------------------------------------------------------------------
+
 
 @router.post(
     "/upload-intent",
@@ -221,6 +220,7 @@ async def create_upload_intent(
 # POST /api/v1/documents/{id}/confirm
 # ----------------------------------------------------------------------
 
+
 @router.post(
     "/{id}/confirm",
     status_code=status.HTTP_200_OK,
@@ -269,7 +269,7 @@ async def confirm_upload(
     # 3. Flip the status. If it's already UPLOADED, this is a no-op
     #    besides re-stamping uploaded_at — we treat double-confirm as
     #    harmless and idempotent.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     updated: Document | None = await document_repo.update_status(
         db,
         id,
@@ -290,7 +290,7 @@ async def confirm_upload(
     try:
         envelope = document_status_event(
             document_id=updated.id,
-            title = doc.title,
+            title=doc.title,
             status=updated.status.value,
         )
         await get_connection_manager().send_to_user(
@@ -324,9 +324,7 @@ async def confirm_upload(
             updated.id,
         )
 
-    logger.info(
-        "upload confirmed document_id=%s owner_id=%s", id, current_user.id
-    )
+    logger.info("upload confirmed document_id=%s owner_id=%s", id, current_user.id)
 
     # Hand the document off to Celery for AI processing. Two important
     # details:
@@ -344,7 +342,7 @@ async def confirm_upload(
         async_result = celery_app.send_task(
             "app.tasks.document.process_document",
             args=[str(updated.id)],
-            countdown=1, 
+            countdown=1,
         )
         logger.info(
             "celery task enqueued task_id=%s document_id=%s",
@@ -354,9 +352,7 @@ async def confirm_upload(
     except Exception:
         # Don't fail the confirm — the upload itself succeeded. Just log
         # so the dev knows the handoff didn't happen.
-        logger.exception(
-            "failed to enqueue celery task for document_id=%s", updated.id
-        )
+        logger.exception("failed to enqueue celery task for document_id=%s", updated.id)
 
     return ConfirmUploadResponse(
         document_id=updated.id,
@@ -368,6 +364,7 @@ async def confirm_upload(
 # ----------------------------------------------------------------------
 # POST /api/v1/documents/{id}/upload-failed
 # ----------------------------------------------------------------------
+
 
 @router.post(
     "/{id}/upload-failed",
@@ -509,6 +506,7 @@ async def report_upload_failed(
 # PATCH /api/v1/documents/{id}
 # ----------------------------------------------------------------------
 
+
 @router.patch(
     "/{id}",
     status_code=status.HTTP_200_OK,
@@ -591,6 +589,7 @@ async def update_document(
 # ----------------------------------------------------------------------
 # DELETE /api/v1/documents/{id}
 # ----------------------------------------------------------------------
+
 
 @router.delete(
     "/{id}",
@@ -702,7 +701,9 @@ async def delete_document(
     if deleted_logs:
         logger.info(
             "document_logs cleaned up document_id=%s owner_id=%s count=%d",
-            id, current_user.id, deleted_logs,
+            id,
+            current_user.id,
+            deleted_logs,
         )
 
     # 5. Delete the row. The DB cascades wipe pages, chunks, embeddings,
@@ -736,8 +737,7 @@ async def delete_document(
             get_supabase_storage().delete_file(storage_bucket, storage_path)
         except Exception:
             logger.exception(
-                "failed to delete storage object bucket=%s path=%s "
-                "for document_id=%s",
+                "failed to delete storage object bucket=%s path=%s " "for document_id=%s",
                 storage_bucket,
                 storage_path,
                 id,
@@ -749,6 +749,7 @@ async def delete_document(
 # ----------------------------------------------------------------------
 # GET /api/v1/documents/{id}/download
 # ----------------------------------------------------------------------
+
 
 @router.get(
     "/{id}/download",
@@ -781,6 +782,7 @@ async def download_document(
 # ----------------------------------------------------------------------
 # GET /api/v1/documents/{id}/view
 # ----------------------------------------------------------------------
+
 
 @router.get(
     "/{id}/view",
@@ -884,6 +886,7 @@ async def list_my_documents(
 # ----------------------------------------------------------------------
 # GET /api/v1/documents/{id}/stats
 # ----------------------------------------------------------------------
+
 
 @router.get(
     "/{id}/stats",
@@ -1038,11 +1041,13 @@ async def get_document_logs(
 # hasn't landed), and `failed` is excluded because there's nothing
 # useful to send back — the row is still around for the activity log
 # but the file is either missing or partial.
-_DOWNLOADABLE_STATUSES: frozenset[DocumentStatus] = frozenset({
-    DocumentStatus.uploaded,
-    DocumentStatus.learning,
-    DocumentStatus.ready,
-})
+_DOWNLOADABLE_STATUSES: frozenset[DocumentStatus] = frozenset(
+    {
+        DocumentStatus.uploaded,
+        DocumentStatus.learning,
+        DocumentStatus.ready,
+    }
+)
 
 # Conservative cap: a 255-char filename is the max our DB stores; 200
 # leaves room for " 1.txt" suffixes some browsers add on collision.
@@ -1231,17 +1236,17 @@ async def _write_log_and_publish(
         )
     except Exception:
         logger.exception(
-            "_write_log_and_publish: add_log_async failed "
-            "document_id=%s event_type=%s",
-            document_id, event_type,
+            "_write_log_and_publish: add_log_async failed " "document_id=%s event_type=%s",
+            document_id,
+            event_type,
         )
         return
 
     if log_id is None:
         logger.warning(
-            "_write_log_and_publish: log_id is None after insert "
-            "document_id=%s event_type=%s",
-            document_id, event_type,
+            "_write_log_and_publish: log_id is None after insert " "document_id=%s event_type=%s",
+            document_id,
+            event_type,
         )
         return
 
@@ -1255,9 +1260,9 @@ async def _write_log_and_publish(
             row = _session.get(DocumentLog, log_id)
             if row is None:
                 logger.warning(
-                    "_write_log_and_publish: row vanished before push "
-                    "log_id=%s event_type=%s",
-                    log_id, event_type,
+                    "_write_log_and_publish: row vanished before push " "log_id=%s event_type=%s",
+                    log_id,
+                    event_type,
                 )
                 return
             publish_document_log(
@@ -1267,9 +1272,9 @@ async def _write_log_and_publish(
             )
         except Exception:
             logger.exception(
-                "_write_log_and_publish: ws publish failed "
-                "log_id=%s event_type=%s",
-                log_id, event_type,
+                "_write_log_and_publish: ws publish failed " "log_id=%s event_type=%s",
+                log_id,
+                event_type,
             )
 
     try:
@@ -1278,6 +1283,7 @@ async def _write_log_and_publish(
         # the canonical way to schedule post-commit work in async
         # SQLAlchemy 2.0.
         from sqlalchemy import event as _sa_event  # local import: tiny
+
         _sa_event.listen(db.sync_session, "after_commit", _push_after_commit)
     except Exception:
         # If the event hook can't be registered, fall back to a
@@ -1288,7 +1294,8 @@ async def _write_log_and_publish(
         logger.exception(
             "_write_log_and_publish: failed to register after_commit hook "
             "log_id=%s event_type=%s",
-            log_id, event_type,
+            log_id,
+            event_type,
         )
         try:
             row = await db.get(DocumentLog, log_id)
@@ -1300,8 +1307,7 @@ async def _write_log_and_publish(
                 )
         except Exception:
             logger.exception(
-                "_write_log_and_publish: fallback publish failed "
-                "log_id=%s event_type=%s",
-                log_id, event_type,
+                "_write_log_and_publish: fallback publish failed " "log_id=%s event_type=%s",
+                log_id,
+                event_type,
             )
-

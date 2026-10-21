@@ -29,7 +29,6 @@ from app.services.ai.llm import (  # noqa: E402
     _strip_sse_data_lines,
 )
 
-
 # ---------------------------------------------------------------------
 # Parser unit tests (no I/O)
 # ---------------------------------------------------------------------
@@ -82,9 +81,7 @@ def _sse_payload(parts: list[str]) -> bytes:
         # with escapes) — `repr` would emit single quotes and break
         # the JSON payload.
         content_json = json.dumps(p)
-        out.append(
-            f'data: {{"choices":[{{"delta":{{"content":{content_json}}}}}]}}\n\n'
-        )
+        out.append(f'data: {{"choices":[{{"delta":{{"content":{content_json}}}}}]}}\n\n')
     out.append("data: [DONE]\n\n")
     return "".join(out).encode("utf-8")
 
@@ -100,6 +97,7 @@ async def test_stream_yields_each_token_then_completes(monkeypatch) -> None:
 
     # Patch httpx.AsyncClient inside the provider module to inject our mock transport.
     from app.services.ai import llm as llm_mod
+
     orig_client = llm_mod.httpx.AsyncClient
 
     def _patched_client(*args, **kwargs):
@@ -109,9 +107,11 @@ async def test_stream_yields_each_token_then_completes(monkeypatch) -> None:
     monkeypatch.setattr(llm_mod.httpx, "AsyncClient", _patched_client)
     provider = OpenAICompatibleProvider()
     tokens: list[str] = []
-    async for tok in provider.stream([
-        LLMMessage(role="user", content="Say hi"),
-    ]):
+    async for tok in provider.stream(
+        [
+            LLMMessage(role="user", content="Say hi"),
+        ]
+    ):
         tokens.append(tok)
     assert tokens == ["Hi", ", ", "world", "!"]
 
@@ -125,6 +125,7 @@ async def test_complete_concatenates_tokens(monkeypatch) -> None:
 
     transport = httpx.MockTransport(handler)
     from app.services.ai import llm as llm_mod
+
     orig_client = llm_mod.httpx.AsyncClient
 
     def _patched_client(*args, **kwargs):
@@ -144,6 +145,7 @@ async def test_stream_surfaces_4xx_as_provider_error(monkeypatch) -> None:
 
     transport = httpx.MockTransport(handler)
     from app.services.ai import llm as llm_mod
+
     orig_client = llm_mod.httpx.AsyncClient
 
     def _patched_client(*args, **kwargs):
@@ -186,6 +188,7 @@ async def test_stream_propagates_cancellation(monkeypatch) -> None:
 
     transport = httpx.MockTransport(handler)
     from app.services.ai import llm as llm_mod
+
     orig_client = llm_mod.httpx.AsyncClient
 
     def _patched_client(*args, **kwargs):

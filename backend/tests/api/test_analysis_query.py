@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 os.environ["SUPABASE_URL"] = ""
 os.environ["SUPABASE_SERVICE_ROLE_KEY"] = ""
@@ -64,11 +64,11 @@ def test_query_returns_answer_and_citations_when_ready(client, monkeypatch) -> N
     _register_and_login(client, f"a-{uuid.uuid4()}@example.com")
 
     from app.api.v1.endpoints import analysis as endpoint_module
+    from app.schemas.analysis import QueryCitation, QueryResponse
     from app.services.document.analyser import (
         _ErrorOutcome,
         _QueryOutcome,
     )
-    from app.schemas.analysis import QueryResponse, QueryCitation
 
     fake_response = QueryResponse(
         answer="The capital is Paris [1].",
@@ -92,6 +92,7 @@ def test_query_returns_answer_and_citations_when_ready(client, monkeypatch) -> N
     monkeypatch.setattr(endpoint_module, "analyse_query_once", fake_once)
     # Also patch the alias used in the import inside `query`.
     import app.services.document.analyser as analyser_pkg
+
     monkeypatch.setattr(analyser_pkg, "analyse_query_once", fake_once)
 
     r = client.post(
@@ -125,6 +126,7 @@ def test_query_maps_no_documents_ready_to_422(client, monkeypatch) -> None:
 
     monkeypatch.setattr(endpoint_module, "analyse_query_once", fake_once)
     import app.services.document.analyser as analyser_pkg
+
     monkeypatch.setattr(analyser_pkg, "analyse_query_once", fake_once)
 
     r = client.post(
@@ -150,6 +152,7 @@ def test_query_maps_provider_mismatch_to_503(client, monkeypatch) -> None:
 
     monkeypatch.setattr(endpoint_module, "analyse_query_once", fake_once)
     import app.services.document.analyser as analyser_pkg
+
     monkeypatch.setattr(analyser_pkg, "analyse_query_once", fake_once)
 
     r = client.post(
@@ -171,6 +174,7 @@ def test_query_maps_provider_error_to_502(client, monkeypatch) -> None:
 
     monkeypatch.setattr(endpoint_module, "analyse_query_once", fake_once)
     import app.services.document.analyser as analyser_pkg
+
     monkeypatch.setattr(analyser_pkg, "analyse_query_once", fake_once)
 
     r = client.post("/api/v1/analysis/query", json={"question": "x"})
@@ -187,9 +191,7 @@ def test_query_rejects_empty_question(client) -> None:
 
 def test_query_rejects_oversized_question(client) -> None:
     _register_and_login(client, f"f-{uuid.uuid4()}@example.com")
-    r = client.post(
-        "/api/v1/analysis/query", json={"question": "x" * 5000}
-    )
+    r = client.post("/api/v1/analysis/query", json={"question": "x" * 5000})
     assert r.status_code == 422
 
 
@@ -207,6 +209,7 @@ def test_stream_init_returns_stream_id(client, monkeypatch) -> None:
         return None
 
     from app.api.v1.endpoints import analysis as endpoint_module
+
     monkeypatch.setattr(endpoint_module, "_run_stream", fake_run_stream)
 
     r = client.post(

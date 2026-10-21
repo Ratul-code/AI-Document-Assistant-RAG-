@@ -61,9 +61,7 @@ def _mark_chunks_embedded(db: Session, chunk_ids: list[UUID]) -> int:
     if not chunk_ids:
         return 0
     result = db.execute(
-        update(DocumentChunk)
-        .where(DocumentChunk.id.in_(chunk_ids))
-        .values(needs_embedding=False)
+        update(DocumentChunk).where(DocumentChunk.id.in_(chunk_ids)).values(needs_embedding=False)
     )
     return result.rowcount or 0
 
@@ -215,17 +213,14 @@ def _process_one_document(
     last_error_message: str | None = None
 
     while True:
-        chunk_ids = list_pending_chunk_ids(
-            db, document_id, owner_id=owner_id, limit=batch_size
-        )
+        chunk_ids = list_pending_chunk_ids(db, document_id, owner_id=owner_id, limit=batch_size)
         if not chunk_ids:
             break
 
         # We need the actual chunk text to embed. Pull just the rows we
         # claimed this batch. Keep chunk_id and text aligned by index.
         rows = db.execute(
-            select(DocumentChunk.id, DocumentChunk.text)
-            .where(DocumentChunk.id.in_(chunk_ids))
+            select(DocumentChunk.id, DocumentChunk.text).where(DocumentChunk.id.in_(chunk_ids))
         ).all()
         texts = [text for _cid, text in rows]
 
@@ -235,9 +230,7 @@ def _process_one_document(
         try:
             results = model.embed_batch(texts)
         except Exception as exc:
-            logger.warning(
-                "embed_chunks: batch failed size=%d err=%s", len(rows), exc
-            )
+            logger.warning("embed_chunks: batch failed size=%d err=%s", len(rows), exc)
             # Whole-batch failure: record the same error against each
             # chunk so none are stuck in `pending` forever. Chunks
             # remain visible for future retries.
@@ -257,7 +250,7 @@ def _process_one_document(
                 )
                 failed += 1
         else:
-            for (chunk_id, _text), result in zip(rows, results):
+            for (chunk_id, _text), result in zip(rows, results, strict=False):
                 upsert_embedding(
                     db,
                     EmbeddingSpec(
@@ -310,9 +303,7 @@ def _process_one_document(
         embedding_event_type = "embedding"
         embedding_message = (
             f"Embedding complete "
-            f"({succeeded} embedded"
-            + (f", {failed} failed" if failed else "")
-            + ")"
+            f"({succeeded} embedded" + (f", {failed} failed" if failed else "") + ")"
         )
     else:
         embedding_event_type = "embedding_failed"
@@ -343,7 +334,10 @@ def _process_one_document(
     )
     logger.info(
         "embed_chunks_for_document: finalize document_id=%s status=%s succeeded=%d failed=%d",
-        document_id, final_status.value, succeeded, failed,
+        document_id,
+        final_status.value,
+        succeeded,
+        failed,
     )
 
     return {
@@ -359,9 +353,7 @@ def _process_one_document(
 # ---------------------------------------------------------------------
 
 
-def _count_pending_chunks(
-    db: Session, document_id: UUID, *, owner_id: UUID
-) -> int:
+def _count_pending_chunks(db: Session, document_id: UUID, *, owner_id: UUID) -> int:
     """Count chunks that still need an embedding, owner-scoped.
 
     Mirrors the WHERE clause in `list_pending_chunk_ids` minus the
@@ -369,8 +361,8 @@ def _count_pending_chunks(
     processes. Used to publish `chunks_total` on the embedding.started
     event so the progress bar has the right max.
     """
-    from app.models.document_page import DocumentPage
     from app.models.document_embedding import DocumentEmbedding
+    from app.models.document_page import DocumentPage
 
     stmt = (
         select(func.count())
@@ -420,7 +412,9 @@ def _log_and_publish(
     except Exception:
         logger.warning(
             "embed_chunks: add_log failed event_type=%s document_id=%s",
-            event_type, document_id, exc_info=True,
+            event_type,
+            document_id,
+            exc_info=True,
         )
         return
 
@@ -431,7 +425,8 @@ def _log_and_publish(
         row = db.get(DocumentLog, log_id)
     except Exception:
         logger.warning(
-            "embed_chunks: failed to refetch log row id=%s", log_id,
+            "embed_chunks: failed to refetch log row id=%s",
+            log_id,
             exc_info=True,
         )
         return
@@ -440,6 +435,7 @@ def _log_and_publish(
 
     try:
         from app.services.pubsub.ws_publisher import publish_document_log
+
         publish_document_log(
             owner_id,
             document_id=document_id,
@@ -448,7 +444,8 @@ def _log_and_publish(
     except Exception:
         logger.warning(
             "embed_chunks: publish_document_log failed id=%s",
-            log_row.id, exc_info=True,
+            row.id,
+            exc_info=True,
         )
 
 
@@ -480,7 +477,9 @@ def _publish_progress(
     except Exception:
         logger.warning(
             "embed_chunks: progress publish failed phase=%s document_id=%s",
-            phase, document_id, exc_info=True,
+            phase,
+            document_id,
+            exc_info=True,
         )
 
 
@@ -515,18 +514,16 @@ def embed_chunks_for_document(self, document_id: str, owner_id: str) -> dict:
         return {"ok": False, "error": "invalid uuid"}
 
     try:
-        result = run_in_sync_session(
-            _process_one_document, doc_uuid, owner_uuid
-        )
-    except Exception as exc:
-        logger.exception(
-            "embed_chunks_for_document failed document_id=%s", document_id
-        )
+        result = run_in_sync_session(_process_one_document, doc_uuid, owner_uuid)
+    except Exception:
+        logger.exception("embed_chunks_for_document failed document_id=%s", document_id)
         raise
 
     logger.info(
         "embed_chunks_for_document done %s succeeded=%s failed=%s",
-        log_extra, result["succeeded"], result["failed"],
+        log_extra,
+        result["succeeded"],
+        result["failed"],
     )
     return {"ok": True, "succeeded": result["succeeded"], "failed": result["failed"]}
 

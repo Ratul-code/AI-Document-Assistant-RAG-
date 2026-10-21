@@ -28,6 +28,8 @@ import logging
 import pytest
 
 from app.core.config import get_settings
+from app.services.ai import embeddings as embeddings_pkg
+from app.services.ai import rerankers as rerankers_pkg
 from app.services.ai.embeddings import (
     DeterministicStubModel,
     reset_embedding_model_singleton,
@@ -36,13 +38,12 @@ from app.services.ai.rerankers import (
     NoneReranker,
     reset_reranker_singleton,
 )
-from app.services.ai import embeddings as embeddings_pkg
-from app.services.ai import rerankers as rerankers_pkg
 
 
 def _run_lifespan(app) -> None:
     """Drive one full lifespan cycle (startup + shutdown) sync-style
     so the assertions can read singleton state on the way out."""
+
     async def _drive() -> None:
         async with app.router.lifespan_context(app):
             pass
@@ -60,8 +61,9 @@ def test_lifespan_preloads_embedding_model_when_rerank_disabled(monkeypatch) -> 
     reset_embedding_model_singleton()
     reset_reranker_singleton()
 
-    from app.main import create_app
     import app.main as main_pkg
+    from app.main import create_app
+
     app = create_app()
 
     embed_calls: list[int] = []
@@ -77,9 +79,9 @@ def test_lifespan_preloads_embedding_model_when_rerank_disabled(monkeypatch) -> 
     _run_lifespan(app)
 
     # Embedding factory called exactly once during startup.
-    assert len(embed_calls) == 1, (
-        f"expected embedding factory to be called once at startup, got {len(embed_calls)}"
-    )
+    assert (
+        len(embed_calls) == 1
+    ), f"expected embedding factory to be called once at startup, got {len(embed_calls)}"
 
     # Singleton should be populated from the prior startup.
     model = embeddings_pkg.get_default_embedding_model()
@@ -96,8 +98,9 @@ def test_lifespan_preloads_reranker_when_enabled(monkeypatch) -> None:
     reset_embedding_model_singleton()
     reset_reranker_singleton()
 
-    from app.main import create_app
     import app.main as main_pkg
+    from app.main import create_app
+
     app = create_app()
 
     rerank_calls: list[int] = []
@@ -132,8 +135,9 @@ def test_lifespan_skips_reranker_preload_when_disabled(monkeypatch) -> None:
     reset_embedding_model_singleton()
     reset_reranker_singleton()
 
-    from app.main import create_app
     import app.main as main_pkg
+    from app.main import create_app
+
     app = create_app()
 
     rerank_calls: list[int] = []
@@ -153,9 +157,7 @@ def test_lifespan_skips_reranker_preload_when_disabled(monkeypatch) -> None:
     )
 
 
-def test_lifespan_does_not_crash_when_embedding_preload_raises(
-    monkeypatch, caplog
-) -> None:
+def test_lifespan_does_not_crash_when_embedding_preload_raises(monkeypatch, caplog) -> None:
     """A startup-time embedding preload failure must NOT crash the
     lifespan — the API has to boot so health checks and the docs
     surface stay reachable. The factory itself is the right place to
@@ -170,8 +172,9 @@ def test_lifespan_does_not_crash_when_embedding_preload_raises(
     reset_embedding_model_singleton()
     reset_reranker_singleton()
 
-    from app.main import create_app
     import app.main as main_pkg
+    from app.main import create_app
+
     app = create_app()
 
     def _boom():
@@ -187,7 +190,4 @@ def test_lifespan_does_not_crash_when_embedding_preload_raises(
         "embedding model preload failed" in rec.message
         and "simulated preload failure" in rec.message
         for rec in caplog.records
-    ), (
-        f"Expected loud 'preload failed' warning, got: "
-        f"{[r.message for r in caplog.records]}"
-    )
+    ), f"Expected loud 'preload failed' warning, got: " f"{[r.message for r in caplog.records]}"

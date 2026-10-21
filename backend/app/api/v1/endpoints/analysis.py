@@ -162,9 +162,7 @@ async def _run_stream(
         )
         raise
     except Exception as exc:
-        logger.exception(
-            "analysis stream crashed user_id=%s stream_id=%s", user_id, stream_id
-        )
+        logger.exception("analysis stream crashed user_id=%s stream_id=%s", user_id, stream_id)
         publish_analysis_error(
             user_id,
             stream_id=stream_id,
@@ -174,15 +172,11 @@ async def _run_stream(
         )
 
 
-async def _dispatch_event(
-    *, user_id: UUID, stream_id: UUID, event: AnalysisEvent
-) -> None:
+async def _dispatch_event(*, user_id: UUID, stream_id: UUID, event: AnalysisEvent) -> None:
     """Translate one in-process event to a WS publish."""
     cid = getattr(event, "conversation_id", None)
     if isinstance(event, AnalysisTokenEvent):
-        publish_analysis_token(
-            user_id, stream_id=stream_id, text=event.text, conversation_id=cid
-        )
+        publish_analysis_token(user_id, stream_id=stream_id, text=event.text, conversation_id=cid)
     elif isinstance(event, AnalysisDoneEvent):
         # `citations` here is `list[dict] | None` — `model_dump(mode="json")`
         # on each QueryCitation would be ideal, but events store dicts
@@ -253,9 +247,7 @@ async def query(
                 current_user.id,
                 stream_id=stream_id,
                 answer=outcome.response.answer,
-                citations=[
-                    c.model_dump(mode="json") for c in outcome.response.citations
-                ],
+                citations=[c.model_dump(mode="json") for c in outcome.response.citations],
             )
         except Exception:
             logger.exception("analysis: REST-fallback WS push failed")
@@ -333,7 +325,9 @@ async def query_stream(
 
     logger.info(
         "analysis stream started user_id=%s stream_id=%s question_len=%d",
-        user_id, stream_id, len(payload.question),
+        user_id,
+        stream_id,
+        len(payload.question),
     )
 
     return QueryStreamStart(stream_id=stream_id)

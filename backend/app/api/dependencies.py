@@ -81,6 +81,7 @@ CurrentUserDep = Annotated[User, Depends(get_current_user)]
 
 # --- Optional auth (for routes that behave differently when logged in) ---
 
+
 async def get_current_user_optional(
     cookie_token: Annotated[str | None, Cookie(alias=_ACCESS_COOKIE_NAME)] = None,
     db: DbDep = None,  # type: ignore[assignment]

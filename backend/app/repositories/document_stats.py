@@ -38,7 +38,6 @@ from app.models.document_chunk import DocumentChunk
 from app.models.document_embedding import DocumentEmbedding, EmbeddingStatus
 from app.models.document_page import DocumentPage, OcrStatus
 
-
 # OCR statuses that mean "OCR work is outstanding or done". "not_needed"
 # is excluded so parser-only pages don't inflate the count. We treat
 # `pending` and `processing` as a single "in flight" bucket because the
@@ -106,9 +105,7 @@ async def document_stats_for(
     pages_needing_ocr = await _count_pages_with_ocr_status(
         db, document_id, exclude=OcrStatus.not_needed
     )
-    pages_ocr_pending = await _count_pages_with_ocr_status(
-        db, document_id, include=_OCR_IN_FLIGHT
-    )
+    pages_ocr_pending = await _count_pages_with_ocr_status(db, document_id, include=_OCR_IN_FLIGHT)
     pages_ocr_failed = await _count_pages_with_ocr_status(
         db, document_id, include=(OcrStatus.failed,)
     )
@@ -118,8 +115,8 @@ async def document_stats_for(
     #    dialog render the common "X succeeded, Y failed" headline AND
     #    survive a future embedding-status enum addition without a
     #    schema change.
-    chunks_embedded, chunks_failed, embedding_status_counts = (
-        await _embedding_breakdown(db, document_id)
+    chunks_embedded, chunks_failed, embedding_status_counts = await _embedding_breakdown(
+        db, document_id
     )
     chunks_pending = chunks_total - chunks_embedded - chunks_failed
 

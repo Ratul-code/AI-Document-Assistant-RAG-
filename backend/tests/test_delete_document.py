@@ -40,7 +40,6 @@ from app.models.document_embedding import DocumentEmbedding
 from app.models.document_log import DocumentLog
 from app.models.document_page import DocumentPage
 
-
 # SQLite does NOT enforce foreign-key cascades by default. Without
 # `PRAGMA foreign_keys=ON`, deleting the `documents` row leaves its
 # pages / chunks / embeddings orphaned — even though the migrations
@@ -163,9 +162,7 @@ async def _row_exists(model, row_id: str) -> bool:
 
     factory = get_session_factory()
     async with factory() as session:
-        result = await session.execute(
-            select(model).where(model.id == UUID(row_id))
-        )
+        result = await session.execute(select(model).where(model.id == UUID(row_id)))
         return result.scalar_one_or_none() is not None
 
 
@@ -192,14 +189,11 @@ def test_delete_other_users_doc_returns_404() -> None:
 
     _register(f"db-{uuid.uuid4().hex[:8]}@x.com")
 
-    doc_id = asyncio.run(
-        _seed_document_with_cascade(user_a, DocumentStatus.ready)
-    )[0]
+    doc_id = asyncio.run(_seed_document_with_cascade(user_a, DocumentStatus.ready))[0]
 
     r = client.delete(f"/api/v1/documents/{doc_id}")
     assert r.status_code == 404, (
-        f"expected 404 when deleting another user's doc, got "
-        f"{r.status_code}: {r.text}"
+        f"expected 404 when deleting another user's doc, got " f"{r.status_code}: {r.text}"
     )
 
 
@@ -224,15 +218,9 @@ def test_delete_happy_path_cascades() -> None:
 
     # After delete: every row is gone.
     assert not asyncio.run(_row_exists(Document, doc_id)), "doc not deleted"
-    assert not asyncio.run(_row_exists(DocumentPage, page_id)), (
-        "page not cascaded"
-    )
-    assert not asyncio.run(_row_exists(DocumentChunk, chunk_id)), (
-        "chunk not cascaded"
-    )
-    assert not asyncio.run(_row_exists(DocumentEmbedding, emb_id)), (
-        "embedding not cascaded"
-    )
+    assert not asyncio.run(_row_exists(DocumentPage, page_id)), "page not cascaded"
+    assert not asyncio.run(_row_exists(DocumentChunk, chunk_id)), "chunk not cascaded"
+    assert not asyncio.run(_row_exists(DocumentEmbedding, emb_id)), "embedding not cascaded"
 
 
 def test_delete_is_idempotent_second_returns_404() -> None:
@@ -241,9 +229,7 @@ def test_delete_is_idempotent_second_returns_404() -> None:
     ('row is gone') is already true."""
     cookie = _register(f"dd-{uuid.uuid4().hex[:8]}@x.com")
     owner = _get_user_id_from_cookie(cookie)
-    doc_id, *_ = asyncio.run(
-        _seed_document_with_cascade(owner, DocumentStatus.ready)
-    )
+    doc_id, *_ = asyncio.run(_seed_document_with_cascade(owner, DocumentStatus.ready))
 
     r1 = client.delete(f"/api/v1/documents/{doc_id}")
     assert r1.status_code == 204, r1.text
@@ -265,19 +251,14 @@ def test_delete_works_in_any_status() -> None:
     ):
         cookie = _register(f"ds-{status.value}-{uuid.uuid4().hex[:8]}@x.com")
         owner = _get_user_id_from_cookie(cookie)
-        doc_id, *_ = asyncio.run(
-            _seed_document_with_cascade(owner, status)
-        )
+        doc_id, *_ = asyncio.run(_seed_document_with_cascade(owner, status))
         r = client.delete(f"/api/v1/documents/{doc_id}")
         assert r.status_code == 204, (
-            f"DELETE on status={status.value!r} returned {r.status_code}: "
-            f"{r.text}"
+            f"DELETE on status={status.value!r} returned {r.status_code}: " f"{r.text}"
         )
 
 
-async def _seed_document_with_logs(
-    owner_id_str: str, log_count: int = 3
-) -> tuple[str, list[str]]:
+async def _seed_document_with_logs(owner_id_str: str, log_count: int = 3) -> tuple[str, list[str]]:
     """Insert a document plus a small batch of `document_logs` rows.
 
     Used by `test_delete_wipes_document_logs` to assert that deleting
@@ -324,10 +305,10 @@ async def _seed_document_with_logs(
         await session.flush()
         # Re-query so we have the assigned ids in a stable order.
         rows = (
-            await session.execute(
-                select(DocumentLog).where(DocumentLog.document_id == doc_id)
-            )
-        ).scalars().all()
+            (await session.execute(select(DocumentLog).where(DocumentLog.document_id == doc_id)))
+            .scalars()
+            .all()
+        )
         log_ids = [str(r.id) for r in rows]
         await session.commit()
 
@@ -380,9 +361,9 @@ def test_delete_wipes_document_logs() -> None:
     # assertion fails the test setup itself is broken — the rest of
     # the assertions become meaningless.
     assert len(log_ids) == 3
-    assert asyncio.run(_log_count_for_doc(doc_id)) == 3, (
-        "fixture failed to insert the expected log rows"
-    )
+    assert (
+        asyncio.run(_log_count_for_doc(doc_id)) == 3
+    ), "fixture failed to insert the expected log rows"
 
     r = client.delete(f"/api/v1/documents/{doc_id}")
     assert r.status_code == 204, r.text
@@ -394,9 +375,7 @@ def test_delete_wipes_document_logs() -> None:
         "document_logs were not wiped on document delete — the global "
         "activity feed would still show events for a deleted doc"
     )
-    assert not asyncio.run(_row_exists(Document, doc_id)), (
-        "parent document not deleted"
-    )
+    assert not asyncio.run(_row_exists(Document, doc_id)), "parent document not deleted"
 
 
 if __name__ == "__main__":

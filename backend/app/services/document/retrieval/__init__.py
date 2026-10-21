@@ -23,8 +23,8 @@ from __future__ import annotations
 
 from app.services.document.retrieval.bm25 import (
     BM25Index,
-    build_bm25_index,
     bm25_top_rows,
+    build_bm25_index,
 )
 from app.services.document.retrieval.hybrid import (
     hybrid_retrieve,

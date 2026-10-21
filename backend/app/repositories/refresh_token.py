@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -41,19 +41,19 @@ async def create_refresh_token(
 
 async def mark_used(db: AsyncSession, token: RefreshToken) -> None:
     """Record that the token was just used (for auditing / debugging)."""
-    token.last_used_at = datetime.now(timezone.utc)
+    token.last_used_at = datetime.now(UTC)
     await db.flush()
 
 
 async def revoke(db: AsyncSession, token: RefreshToken) -> None:
     """Mark a single token as revoked."""
-    token.revoked_at = datetime.now(timezone.utc)
+    token.revoked_at = datetime.now(UTC)
     await db.flush()
 
 
 async def revoke_family(db: AsyncSession, family_id: UUID) -> None:
     """Revoke every non-revoked row in a token family (reuse-detection)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stmt = (
         update(RefreshToken)
         .where(
@@ -65,9 +65,7 @@ async def revoke_family(db: AsyncSession, family_id: UUID) -> None:
     await db.execute(stmt)
 
 
-async def set_replaced_by(
-    db: AsyncSession, old: RefreshToken, new_id: UUID
-) -> None:
+async def set_replaced_by(db: AsyncSession, old: RefreshToken, new_id: UUID) -> None:
     """Link a rotated-out token to the row that replaced it."""
     old.replaced_by_id = new_id
     await db.flush()

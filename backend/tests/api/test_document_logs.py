@@ -17,7 +17,7 @@ import asyncio
 import json
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from uuid import UUID
 
 os.environ.setdefault("SUPABASE_URL", "")
@@ -66,9 +66,7 @@ def _decode_sub(cookie_value: str) -> str:
     return _json.loads(base64.urlsafe_b64decode(payload_b64))["sub"]
 
 
-async def _seed_doc_and_logs(
-    owner_id: str, *, num_logs: int = 3
-) -> tuple[str, list[str]]:
+async def _seed_doc_and_logs(owner_id: str, *, num_logs: int = 3) -> tuple[str, list[str]]:
     """Insert one document + N log rows for it. Returns (doc_id, log_ids)."""
     factory = get_session_factory()
     doc_id = uuid.uuid4()
@@ -90,7 +88,7 @@ async def _seed_doc_and_logs(
         await session.commit()
 
     # Seed log rows with explicit timestamps for deterministic ordering.
-    base = datetime.now(timezone.utc)
+    base = datetime.now(UTC)
     factory2 = get_session_factory()
     async with factory2() as session:  # type: AsyncSession
         for i in range(num_logs):
@@ -138,9 +136,9 @@ def test_logs_other_users_doc_returns_404() -> None:
     doc_id, _ = asyncio.run(_seed_doc_and_logs(owner_b, num_logs=2))
 
     r = c_a.get(f"/api/v1/documents/{doc_id}/logs")
-    assert r.status_code == 404, (
-        f"expected 404 for cross-owner logs read, got {r.status_code}: {r.text}"
-    )
+    assert (
+        r.status_code == 404
+    ), f"expected 404 for cross-owner logs read, got {r.status_code}: {r.text}"
 
 
 def test_logs_empty_doc_returns_empty_list() -> None:

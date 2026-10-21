@@ -40,9 +40,8 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
 
 from eval.scripts._db import persisted_engine
 from eval.scripts.seed_corpus import (
@@ -53,7 +52,6 @@ from eval.scripts.seed_corpus import (
     owner_id_file_for,
     seed_one_document,
 )
-
 
 # Manifest schema (kept in sync with the runner's reader):
 # the runner refuses to start unless `model_name` matches its
@@ -88,7 +86,7 @@ def write_manifest(
         "embedding_dim": embedding_dim,
         "doc_count": doc_count,
         "chunk_count": chunk_count,
-        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "completed_at": datetime.now(UTC).isoformat(),
         "db_path": str(db_path),
     }
     # Question count is recorded so the runner can confirm its
@@ -210,9 +208,11 @@ def main(argv: list[str] | None = None) -> int:
     # embedding worker's status-event helper doesn't try to reach
     # Redis (we're still in the eval env, not in the dev DB).
     from eval.scripts._db import patch_pubsub_noop, unpatch_pubsub
+
     patch_pubsub_noop()
     engine = persisted_engine(db_path)
-    from sqlalchemy.orm import sessionmaker, Session
+    from sqlalchemy.orm import Session, sessionmaker
+
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
 
     total_pages = 0
@@ -248,8 +248,7 @@ def main(argv: list[str] | None = None) -> int:
                     succeeded += 1
                     if idx % 100 == 0 or idx == len(docs):
                         print(
-                            f"  [{idx}/{len(docs)}] {title}: "
-                            f"{n_pages} pages, {n_chunks} chunks"
+                            f"  [{idx}/{len(docs)}] {title}: " f"{n_pages} pages, {n_chunks} chunks"
                         )
                     if idx % 200 == 0:
                         db.commit()

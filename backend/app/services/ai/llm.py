@@ -15,8 +15,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator, Literal, Protocol
+from typing import Literal, Protocol
 
 import httpx
 
@@ -77,7 +78,7 @@ def _strip_sse_data_lines(raw: str) -> str | None:
     if not line.startswith("data:"):
         # Some providers (e.g. proxies) prepend other events; skip them.
         return None
-    payload = line[len("data:"):].strip()
+    payload = line[len("data:") :].strip()
     if payload == "[DONE]" or not payload:
         return None
     return payload
@@ -129,9 +130,7 @@ class OpenAICompatibleProvider:
         self._model = model or settings.analysis_llm_model
         self._base_url = (base_url or settings.analysis_llm_base_url).rstrip("/")
         self._timeout_s = timeout_s or settings.analysis_llm_request_timeout_s
-        self._max_output_tokens = (
-            max_output_tokens or settings.analysis_llm_max_output_tokens
-        )
+        self._max_output_tokens = max_output_tokens or settings.analysis_llm_max_output_tokens
         self._temperature = (
             temperature if temperature is not None else settings.analysis_llm_temperature
         )
@@ -144,13 +143,9 @@ class OpenAICompatibleProvider:
         # Optional attribution headers (OpenRouter uses these to rank
         # apps on the leaderboard). `None` → header omitted entirely.
         self._http_referer = (
-            http_referer if http_referer is not None
-            else settings.analysis_llm_http_referer
+            http_referer if http_referer is not None else settings.analysis_llm_http_referer
         )
-        self._x_title = (
-            x_title if x_title is not None
-            else settings.analysis_llm_x_title
-        )
+        self._x_title = x_title if x_title is not None else settings.analysis_llm_x_title
 
     def _resolve_api_key(self) -> str | None:
         if self._api_key_override is not None:
@@ -161,15 +156,14 @@ class OpenAICompatibleProvider:
         # os.environ directly so the secret never lands in Settings.
         if self._api_key_env is not None:
             import os
+
             return os.environ.get(self._api_key_env)
         return get_llm_api_key()
 
     def _build_payload(self, messages: list[LLMMessage]) -> dict:
         return {
             "model": self._model,
-            "messages": [
-                {"role": m.role, "content": m.content} for m in messages
-            ],
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
             "max_tokens": self._max_output_tokens,
             "temperature": self._temperature,
             "stream": True,
@@ -223,9 +217,7 @@ class OpenAICompatibleProvider:
                             detail = f"status={response.status_code}"
                         raise LLMProviderError(
                             code="PROVIDER_ERROR",
-                            message=(
-                                f"LLM returned {response.status_code}: {detail}"
-                            ),
+                            message=(f"LLM returned {response.status_code}: {detail}"),
                         )
 
                     async for raw_line in response.aiter_lines():

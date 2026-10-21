@@ -20,25 +20,23 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine
 
 from app.db.base import Base
 from app.models.document import Document, DocumentStatus
 from app.models.document_log import DocumentLog
 from app.models.user import User
 from app.repositories import document_log as log_repo
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -75,9 +73,7 @@ def async_session_factory():
             await conn.run_sync(Base.metadata.create_all)
 
     asyncio.run(_create())
-    factory = async_sessionmaker(
-        bind=engine, expire_on_commit=False, class_=AsyncSession
-    )
+    factory = async_sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)
     try:
         yield factory
     finally:
@@ -148,8 +144,13 @@ async def _seed_async(factory, owner_email: str) -> tuple[UUID, UUID]:
 
 
 async def _seed_log_async(
-    factory, *, document_id: UUID, owner_id: UUID, message: str,
-    created_at: datetime, event_type: str = "embedding.progress",
+    factory,
+    *,
+    document_id: UUID,
+    owner_id: UUID,
+    message: str,
+    created_at: datetime,
+    event_type: str = "embedding.progress",
     metadata: dict | None = None,
 ) -> None:
     """Insert one `DocumentLog` row with an explicit `created_at`.
@@ -192,14 +193,14 @@ def test_add_log_writes_row_with_metadata(sync_session) -> None:
     sync_session.commit()
 
     assert log_id is not None
-    row = sync_session.execute(
-        select(DocumentLog).where(DocumentLog.id == log_id)
-    ).scalar_one()
+    row = sync_session.execute(select(DocumentLog).where(DocumentLog.id == log_id)).scalar_one()
     assert row.event_type == "chunking.progress"
     assert row.message == "Page 1/3 chunked"
     # The metadata column is Text (JSON string), not a native dict.
     assert json.loads(row.metadata_json) == {
-        "page_index": 1, "pages_total": 3, "chunks_so_far": 12,
+        "page_index": 1,
+        "pages_total": 3,
+        "chunks_so_far": 12,
     }
 
 
@@ -215,9 +216,7 @@ def test_add_log_with_no_message_or_metadata(sync_session) -> None:
     )
     sync_session.commit()
 
-    row = sync_session.execute(
-        select(DocumentLog).where(DocumentLog.id == log_id)
-    ).scalar_one()
+    row = sync_session.execute(select(DocumentLog).where(DocumentLog.id == log_id)).scalar_one()
     assert row.message is None
     assert row.metadata_json is None
 
@@ -246,9 +245,7 @@ def test_add_log_swallows_non_serialisable_metadata(sync_session) -> None:
     sync_session.commit()
 
     assert log_id is not None
-    row = sync_session.execute(
-        select(DocumentLog).where(DocumentLog.id == log_id)
-    ).scalar_one()
+    row = sync_session.execute(select(DocumentLog).where(DocumentLog.id == log_id)).scalar_one()
     # The repo falls back to NULL rather than raising — the row is
     # still there for the activity feed.
     assert row.metadata_json is None
@@ -261,24 +258,27 @@ def test_add_log_swallows_non_serialisable_metadata(sync_session) -> None:
 
 def test_list_logs_newest_first(async_session_factory) -> None:
     """3 rows with distinct timestamps → list returns them newest first."""
+
     async def body():
-        owner_id, doc_id = await _seed_async(
-            async_session_factory, "newest@example.com"
-        )
-        base = datetime.now(timezone.utc)
+        owner_id, doc_id = await _seed_async(async_session_factory, "newest@example.com")
+        base = datetime.now(UTC)
         # 1s apart so the ordering is unambiguous even on SQLite's
         # second-resolution timestamps.
         for i, msg in enumerate(["page 0", "page 1", "page 2"]):
             await _seed_log_async(
                 async_session_factory,
-                document_id=doc_id, owner_id=owner_id,
-                message=msg, created_at=base + timedelta(seconds=i),
+                document_id=doc_id,
+                owner_id=owner_id,
+                message=msg,
+                created_at=base + timedelta(seconds=i),
                 metadata={"page_index": i},
             )
 
         async with async_session_factory() as session:
             rows = await log_repo.list_logs_for_document(
-                session, document_id=doc_id, owner_id=owner_id,
+                session,
+                document_id=doc_id,
+                owner_id=owner_id,
             )
             return [r.message for r in rows]
 
@@ -287,15 +287,15 @@ def test_list_logs_newest_first(async_session_factory) -> None:
 
 def test_list_logs_paginates(async_session_factory) -> None:
     """`limit` + `offset` clamp the page; the list respects both."""
+
     async def body():
-        owner_id, doc_id = await _seed_async(
-            async_session_factory, "page@example.com"
-        )
-        base = datetime.now(timezone.utc)
+        owner_id, doc_id = await _seed_async(async_session_factory, "page@example.com")
+        base = datetime.now(UTC)
         for i in range(5):
             await _seed_log_async(
                 async_session_factory,
-                document_id=doc_id, owner_id=owner_id,
+                document_id=doc_id,
+                owner_id=owner_id,
                 message=f"batch {i}",
                 created_at=base + timedelta(seconds=i),
                 metadata={"batch_index": i},
@@ -303,12 +303,18 @@ def test_list_logs_paginates(async_session_factory) -> None:
 
         async with async_session_factory() as session:
             page1 = await log_repo.list_logs_for_document(
-                session, document_id=doc_id, owner_id=owner_id,
-                limit=2, offset=0,
+                session,
+                document_id=doc_id,
+                owner_id=owner_id,
+                limit=2,
+                offset=0,
             )
             page2 = await log_repo.list_logs_for_document(
-                session, document_id=doc_id, owner_id=owner_id,
-                limit=2, offset=2,
+                session,
+                document_id=doc_id,
+                owner_id=owner_id,
+                limit=2,
+                offset=2,
             )
             return [r.message for r in page1], [r.message for r in page2]
 
@@ -319,20 +325,23 @@ def test_list_logs_paginates(async_session_factory) -> None:
 
 def test_list_logs_is_owner_scoped(async_session_factory) -> None:
     """User B asking for user A's logs gets nothing — no info leak."""
+
     async def body():
-        owner_a, doc_a = await _seed_async(
-            async_session_factory, "a@example.com"
-        )
+        owner_a, doc_a = await _seed_async(async_session_factory, "a@example.com")
         await _seed_log_async(
             async_session_factory,
-            document_id=doc_a, owner_id=owner_a,
-            message="ready", created_at=datetime.now(timezone.utc),
+            document_id=doc_a,
+            owner_id=owner_a,
+            message="ready",
+            created_at=datetime.now(UTC),
             event_type="ready",
         )
 
         async with async_session_factory() as session:
             rows = await log_repo.list_logs_for_document(
-                session, document_id=doc_a, owner_id=uuid4(),  # not A
+                session,
+                document_id=doc_a,
+                owner_id=uuid4(),  # not A
             )
             return rows
 
@@ -342,16 +351,17 @@ def test_list_logs_is_owner_scoped(async_session_factory) -> None:
 def test_count_logs_matches_list_filter(async_session_factory) -> None:
     """`count_logs_for_document` uses the same WHERE clause as the list
     helper, so a paginated client can trust the total."""
+
     async def body():
-        owner_id, doc_id = await _seed_async(
-            async_session_factory, "cnt@example.com"
-        )
-        base = datetime.now(timezone.utc)
+        owner_id, doc_id = await _seed_async(async_session_factory, "cnt@example.com")
+        base = datetime.now(UTC)
         for i in range(4):
             await _seed_log_async(
                 async_session_factory,
-                document_id=doc_id, owner_id=owner_id,
-                message=f"b{i}", created_at=base + timedelta(seconds=i),
+                document_id=doc_id,
+                owner_id=owner_id,
+                message=f"b{i}",
+                created_at=base + timedelta(seconds=i),
             )
 
         async with async_session_factory() as session:
@@ -359,8 +369,11 @@ def test_count_logs_matches_list_filter(async_session_factory) -> None:
                 session, document_id=doc_id, owner_id=owner_id
             )
             page = await log_repo.list_logs_for_document(
-                session, document_id=doc_id, owner_id=owner_id,
-                limit=2, offset=0,
+                session,
+                document_id=doc_id,
+                owner_id=owner_id,
+                limit=2,
+                offset=0,
             )
             return total, len(page)
 
@@ -373,20 +386,23 @@ def test_count_logs_for_other_user_is_zero(async_session_factory) -> None:
     """`count_logs_for_document` returns 0 for cross-owner access, so
     the paginated response reports total=0 instead of leaking the real
     count of A's logs."""
+
     async def body():
-        owner_a, doc_a = await _seed_async(
-            async_session_factory, "co-a@example.com"
-        )
+        owner_a, doc_a = await _seed_async(async_session_factory, "co-a@example.com")
         await _seed_log_async(
             async_session_factory,
-            document_id=doc_a, owner_id=owner_a,
-            message="ready", created_at=datetime.now(timezone.utc),
+            document_id=doc_a,
+            owner_id=owner_a,
+            message="ready",
+            created_at=datetime.now(UTC),
             event_type="ready",
         )
 
         async with async_session_factory() as session:
             return await log_repo.count_logs_for_document(
-                session, document_id=doc_a, owner_id=uuid4(),
+                session,
+                document_id=doc_a,
+                owner_id=uuid4(),
             )
 
     assert _run(body()) == 0
@@ -394,4 +410,5 @@ def test_count_logs_for_other_user_is_zero(async_session_factory) -> None:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(pytest.main([__file__, "-v"]))

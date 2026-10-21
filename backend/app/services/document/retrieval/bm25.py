@@ -33,8 +33,8 @@ ties / zeros collapse to the deterministic secondary order
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from app.repositories.embedding_search import CandidateRow
 from app.services.document.retrieval._tokenize import tokenize_cached
@@ -131,9 +131,7 @@ class BM25Index:
                 self.candidates[i].chunk_index,
             ),
         )
-        return [
-            (self.candidates[i], scores[i]) for i in order[:top_k]
-        ]
+        return [(self.candidates[i], scores[i]) for i in order[:top_k]]
 
     def _all_zero_top_k(self, top_k: int) -> list[tuple[CandidateRow, float]]:
         """Deterministic fallback when the query has no BM25 signal.
@@ -154,9 +152,7 @@ class BM25Index:
                 self.candidates[i].chunk_index,
             ),
         )
-        return [
-            (self.candidates[i], 0.0) for i in order[:top_k]
-        ]
+        return [(self.candidates[i], 0.0) for i in order[:top_k]]
 
 
 def build_bm25_index(
@@ -185,9 +181,9 @@ def build_bm25_index(
     n = len(candidates)
     if n == 0:
         return BM25Index(
-            candidates=tuple(),
+            candidates=(),
             idf={},
-            doc_lens=tuple(),
+            doc_lens=(),
             avg_dl=0.0,
             k1=k1,
             b=b,

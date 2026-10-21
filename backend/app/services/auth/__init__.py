@@ -6,8 +6,10 @@ from app.services.auth.service import (
     TokenPair,
     login,
     logout,
-    refresh as refresh_tokens,
     register_user,
+)
+from app.services.auth.service import (
+    refresh as refresh_tokens,
 )
 
 __all__ = [

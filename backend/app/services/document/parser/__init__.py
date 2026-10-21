@@ -36,7 +36,9 @@ PARSERS_BY_MIME: dict[str, Parser] = {
 
 PARSERS_BY_EXT: dict[str, Parser] = {
     ".pdf": PARSERS_BY_MIME["application/pdf"],
-    ".docx": PARSERS_BY_MIME["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+    ".docx": PARSERS_BY_MIME[
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ],
     ".md": PARSERS_BY_MIME["text/markdown"],
     ".txt": PARSERS_BY_MIME["text/plain"],
 }
@@ -44,9 +46,7 @@ PARSERS_BY_EXT: dict[str, Parser] = {
 FALLBACK_PARSER: Parser = FallbackParser()
 
 
-def parse_document(
-    file_path: Path, mime_type: str, filename: str
-) -> list[ParsedPage]:
+def parse_document(file_path: Path, mime_type: str, filename: str) -> list[ParsedPage]:
     """Pick the right parser and return finalized pages."""
     parser: Parser = (
         PARSERS_BY_MIME.get(mime_type)
@@ -54,9 +54,7 @@ def parse_document(
         or FALLBACK_PARSER
     )
     pages = parser.parse(file_path, filename=filename)
-    return renumber_and_finalize(
-        pages, parser_name=parser.name, parser_version=parser.version
-    )
+    return renumber_and_finalize(pages, parser_name=parser.name, parser_version=parser.version)
 
 
 __all__ = [

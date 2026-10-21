@@ -17,10 +17,10 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(
-    task_track_started=True,          # mark tasks as STARTED (useful for monitoring)
-    task_time_limit= 15*  60,              # hard kill after 15 min
-    task_soft_time_limit= 10 * 60,         # raise SoftTimeLimitExceeded after 10 min
-    worker_prefetch_multiplier=1,     # fair dispatch: don't hoard tasks
+    task_track_started=True,  # mark tasks as STARTED (useful for monitoring)
+    task_time_limit=15 * 60,  # hard kill after 15 min
+    task_soft_time_limit=10 * 60,  # raise SoftTimeLimitExceeded after 10 min
+    worker_prefetch_multiplier=1,  # fair dispatch: don't hoard tasks
     timezone="UTC",
     enable_utc=True,
     accept_content=["json"],

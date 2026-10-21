@@ -57,25 +57,25 @@ class DocumentLogEventType(str, enum.Enum):
     """
 
     # --- Upload phase (one row, emitted at confirm time) ---
-    uploaded = "uploaded"                        # /confirm landed; doc is UPLOADED
+    uploaded = "uploaded"  # /confirm landed; doc is UPLOADED
 
     # --- parse phase ---
-    parsing = "parsing"                          # N pages parsed (terminal row)
-    parsing_failed = "parsing.failed"            # parse raised; doc -> FAILED
+    parsing = "parsing"  # N pages parsed (terminal row)
+    parsing_failed = "parsing.failed"  # parse raised; doc -> FAILED
 
     # --- chunking phase ---
-    chunking = "chunking"                        # total chunks committed (terminal row)
-    chunking_failed = "chunking.failed"          # chunker raised; doc -> FAILED
+    chunking = "chunking"  # total chunks committed (terminal row)
+    chunking_failed = "chunking.failed"  # chunker raised; doc -> FAILED
 
     # --- embedding phase ---
-    embedding = "embedding"                      # {succeeded, failed, model} (terminal row)
-    embedding_failed = "embedding.failed"        # all batches failed; doc -> FAILED
+    embedding = "embedding"  # {succeeded, failed, model} (terminal row)
+    embedding_failed = "embedding.failed"  # all batches failed; doc -> FAILED
 
     # --- Catch-all for unknown-stage failures in process_document ---
-    processing_failed = "processing.failed"      # stage unknown; doc -> FAILED
+    processing_failed = "processing.failed"  # stage unknown; doc -> FAILED
 
     # --- Operator / out-of-band ---
-    document_deleted = "document.deleted"        # user deleted the doc
+    document_deleted = "document.deleted"  # user deleted the doc
 
 
 class DocumentLog(Base):

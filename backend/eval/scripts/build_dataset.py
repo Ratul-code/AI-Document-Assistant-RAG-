@@ -31,36 +31,12 @@ Run from `backend/` with the venv active::
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from uuid import UUID
 
-from eval.scripts._db import persisted_engine
-from eval.scripts.doc2dial_loader import (
-    augment_question,
-    cache_dir_for as doc2dial_cache_dir_for,
-    filter_standalone_questions,
-    is_cached as doc2dial_is_cached,
-    load_dialogue_turns,
-    load_doc_spans,
-)
-from eval.scripts.ingest_corpus import (
-    DB_FILENAME,
-    cache_dir_for as ingest_cache_dir_for,
-    read_manifest,
-)
-from eval.scripts.mapping import build_passage_mapping
-from eval.scripts.seed_corpus import (
-    BACKEND_DIR,
-    deterministic_doc_id,
-    doc_text_hash,
-    get_or_create_owner_id,
-    owner_id_file_for,
-)
 from eval.schema import (
     Doc2DialDataset,
     MetricsConfig,
@@ -69,7 +45,33 @@ from eval.schema import (
     Question,
     RelevantChunkKey,
 )
-
+from eval.scripts._db import persisted_engine
+from eval.scripts.doc2dial_loader import (
+    augment_question,
+    filter_standalone_questions,
+    load_dialogue_turns,
+    load_doc_spans,
+)
+from eval.scripts.doc2dial_loader import (
+    cache_dir_for as doc2dial_cache_dir_for,
+)
+from eval.scripts.doc2dial_loader import (
+    is_cached as doc2dial_is_cached,
+)
+from eval.scripts.ingest_corpus import (
+    DB_FILENAME,
+    read_manifest,
+)
+from eval.scripts.ingest_corpus import (
+    cache_dir_for as ingest_cache_dir_for,
+)
+from eval.scripts.mapping import build_passage_mapping
+from eval.scripts.seed_corpus import (
+    BACKEND_DIR,
+    deterministic_doc_id,
+    get_or_create_owner_id,
+    owner_id_file_for,
+)
 
 # --------------------------------------------------------------------------
 # Question-side helpers
@@ -173,10 +175,11 @@ def load_chunks_by_doc_id(
     When provided, only docs whose UUID matches one of those keys
     are loaded. When None, every doc owned by `owner_id` is loaded.
     """
+    from sqlalchemy import select
+
     from app.models.document import Document
     from app.models.document_chunk import DocumentChunk
     from app.models.document_page import DocumentPage
-    from sqlalchemy import select
 
     out: dict[str, list[tuple[UUID, int, str]]] = {}
     docs_q = select(Document).where(Document.owner_id == owner_id)
@@ -184,19 +187,22 @@ def load_chunks_by_doc_id(
         # Resolve the doc_keys → UUID5 once so the DB only pulls
         # the docs the question slice actually needs.
         from eval.scripts.seed_corpus import deterministic_doc_id
+
         wanted_uuids = {deterministic_doc_id(owner_id, dk) for dk in doc_keys}
         docs_q = docs_q.where(Document.id.in_(wanted_uuids))
     docs = db.execute(docs_q).scalars().all()
     for doc in docs:
-        chunks = db.execute(
-            select(DocumentChunk)
-            .join(DocumentPage, DocumentChunk.page_id == DocumentPage.id)
-            .where(DocumentPage.document_id == doc.id)
-            .order_by(DocumentPage.page_number, DocumentChunk.chunk_index)
-        ).scalars().all()
-        out[str(doc.id)] = [
-            (doc.id, c.chunk_index, c.text or "") for c in chunks if c.text
-        ]
+        chunks = (
+            db.execute(
+                select(DocumentChunk)
+                .join(DocumentPage, DocumentChunk.page_id == DocumentPage.id)
+                .where(DocumentPage.document_id == doc.id)
+                .order_by(DocumentPage.page_number, DocumentChunk.chunk_index)
+            )
+            .scalars()
+            .all()
+        )
+        out[str(doc.id)] = [(doc.id, c.chunk_index, c.text or "") for c in chunks if c.text]
     return out
 
 
@@ -253,7 +259,6 @@ def build_question_row_doc2dial(
     # `doc_id` is only unique within a domain, so we hash the
     # composite `doc_key` (`"<domain>::<doc_id>"`) the same way
     # `seed_corpus.load_unique_documents_doc2dial` does at ingest.
-    from eval.scripts.seed_corpus import deterministic_doc_id
 
     doc_id = deterministic_doc_id(owner_id, doc_key)
     chunk_records = doc_id_to_chunks.get(str(doc_id), [])
@@ -274,9 +279,7 @@ def build_question_row_doc2dial(
         if mapping.entries:
             audit_maps.append((q["id"], mapping))
         for key in relevant:
-            all_relevant.append(
-                RelevantChunkKey(document_id=key[0], chunk_index=key[1])
-            )
+            all_relevant.append(RelevantChunkKey(document_id=key[0], chunk_index=key[1]))
 
     return (
         Question(
@@ -288,9 +291,7 @@ def build_question_row_doc2dial(
             # Reference identifiers are just the per-doc `sp_id`
             # strings; the dialogue's domain + doc_id are already
             # carried on the parent row.
-            relevant_passage_ids=[
-                str(ref.get("sp_id", "")) for ref in q.get("references", [])
-            ],
+            relevant_passage_ids=[str(ref.get("sp_id", "")) for ref in q.get("references", [])],
             gold_answer=q["gold_answer"],
         ),
         audit_maps,
@@ -390,7 +391,8 @@ def main(argv: list[str] | None = None) -> int:
     scored = 0
 
     engine = persisted_engine(db_path)
-    from sqlalchemy.orm import sessionmaker, Session
+    from sqlalchemy.orm import Session, sessionmaker
+
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
     try:
         with SessionLocal() as db:
@@ -421,7 +423,9 @@ def main(argv: list[str] | None = None) -> int:
             doc_id_to_chunks = load_chunks_by_doc_id(
                 db, owner_id, doc_keys={t["doc_key"] for t in turns}
             )
-            print(f"Loaded chunks for {len(doc_id_to_chunks)} docs (of the {len(turns)} turns' source docs).")
+            print(
+                f"Loaded chunks for {len(doc_id_to_chunks)} docs (of the {len(turns)} turns' source docs)."
+            )
             if args.context_mode != "none":
                 print(
                     f"--context-mode={args.context_mode}: rewriting each "
@@ -461,7 +465,7 @@ def main(argv: list[str] | None = None) -> int:
         passage_mapping="fuzzy_overlap_0.5",
         questions=question_rows,
         metrics_config=MetricsConfig(),
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         owner_id=owner_id,
         source_doc_count=manifest["doc_count"],
         question_type_counts=dict(type_counts),
@@ -469,11 +473,7 @@ def main(argv: list[str] | None = None) -> int:
 
     dataset_path = out_dir / "dataset.json"
     dataset_path.write_text(dataset.model_dump_json(indent=2))
-    mapping_floor = (
-        f"{scored}/{len(question_rows)}"
-        if len(question_rows) > 0
-        else "n/a"
-    )
+    mapping_floor = f"{scored}/{len(question_rows)}" if len(question_rows) > 0 else "n/a"
     print(
         f"Wrote {dataset_path} ({len(question_rows)} questions, "
         f"{mapping_floor} mapped to ≥1 chunk — this is the upper "
@@ -482,7 +482,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 5. Audit-only file.
     flat_entries: list[PassageMappingEntry] = []
-    for qid, mappings in audit_by_question.items():
+    for _qid, mappings in audit_by_question.items():
         for m in mappings:
             flat_entries.extend(m.entries)
     audit = PassageMapping(
@@ -493,9 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     mapping_path = out_dir / "passage_mapping.json"
     mapping_path.write_text(audit.model_dump_json(indent=2))
-    print(
-        f"Wrote {mapping_path} ({len(flat_entries)} entries)."
-    )
+    print(f"Wrote {mapping_path} ({len(flat_entries)} entries).")
     return 0
 
 

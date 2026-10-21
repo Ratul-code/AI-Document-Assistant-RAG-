@@ -12,8 +12,8 @@ Conventions:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Sequence
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -22,10 +22,10 @@ from sqlalchemy.orm import Session
 
 from app.models.document import Document, DocumentStatus
 
-
 # ----------------------------------------------------------------------
 # Create
 # ----------------------------------------------------------------------
+
 
 async def create_document(
     db: AsyncSession,
@@ -70,6 +70,7 @@ async def create_document(
 # ----------------------------------------------------------------------
 # Read
 # ----------------------------------------------------------------------
+
 
 async def get_document(
     db: AsyncSession,
@@ -153,6 +154,7 @@ async def list_ready_documents(
 # ----------------------------------------------------------------------
 # Update
 # ----------------------------------------------------------------------
+
 
 async def update_status(
     db: AsyncSession,
@@ -308,6 +310,7 @@ def delete_document_any_owner(db: Session, document_id: UUID) -> bool:
 # Quota / aggregation helpers
 # ----------------------------------------------------------------------
 
+
 async def count_user_documents(
     db: AsyncSession,
     *,
@@ -318,9 +321,7 @@ async def count_user_documents(
 
     If `status` is provided, only documents in that status are counted.
     """
-    stmt = select(func.count()).select_from(Document).where(
-        Document.owner_id == owner_id
-    )
+    stmt = select(func.count()).select_from(Document).where(Document.owner_id == owner_id)
     if status is not None:
         stmt = stmt.where(Document.status == status)
     result = await db.execute(stmt)
@@ -350,9 +351,13 @@ async def count_stuck_processing(
     Used by a cleanup job to find uploads that the client never confirmed.
     Returns the count; the caller can then mark them as failed.
     """
-    stmt = select(func.count()).select_from(Document).where(
-        Document.status == DocumentStatus.processing,
-        Document.created_at < older_than,
+    stmt = (
+        select(func.count())
+        .select_from(Document)
+        .where(
+            Document.status == DocumentStatus.processing,
+            Document.created_at < older_than,
+        )
     )
     result = await db.execute(stmt)
     return int(result.scalar_one())
@@ -398,9 +403,13 @@ async def count_stuck_learning(
     `_process_one_document` is idempotent (skips chunks that already
     have a succeeded embedding).
     """
-    stmt = select(func.count()).select_from(Document).where(
-        Document.status == DocumentStatus.learning,
-        Document.updated_at < older_than,
+    stmt = (
+        select(func.count())
+        .select_from(Document)
+        .where(
+            Document.status == DocumentStatus.learning,
+            Document.updated_at < older_than,
+        )
     )
     result = await db.execute(stmt)
     return int(result.scalar_one())

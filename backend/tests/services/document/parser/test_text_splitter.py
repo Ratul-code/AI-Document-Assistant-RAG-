@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import pytest
+
 from app.services.document.parser import parse_document
 from app.services.document.parser.text_splitter import split_into_pages
 

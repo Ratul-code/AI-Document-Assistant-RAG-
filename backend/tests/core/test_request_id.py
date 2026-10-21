@@ -38,7 +38,6 @@ from app.core.request_id import (
 )
 from app.main import create_app
 
-
 # --- Helpers ------------------------------------------------------------
 
 
@@ -70,9 +69,9 @@ def test_request_id_generated_when_absent(client: TestClient) -> None:
     rid = resp.headers.get("X-Request-ID")
     assert rid is not None, "response missing X-Request-ID header"
     assert rid != "", "X-Request-ID header is empty"
-    assert _MINTED_RE.match(rid), (
-        f"minted request id {rid!r} does not look like a token_urlsafe value"
-    )
+    assert _MINTED_RE.match(
+        rid
+    ), f"minted request id {rid!r} does not look like a token_urlsafe value"
 
 
 # --- 2. Propagation -----------------------------------------------------
@@ -141,13 +140,15 @@ def test_request_id_appears_on_log_records(
 
     redis_down = (False, "ConnectionError: refused")
     redis_ok = (True, "stub ok")
-    with caplog.at_level(logging.WARNING, logger="app.api.v1.endpoints.health"), \
-         patch("app.api.v1.endpoints.health._sync_redis_ping", return_value=redis_down), \
-         patch("app.api.v1.endpoints.health._sync_celery_ping", return_value=redis_ok), \
-         patch(
-             "app.api.v1.endpoints.health._async_llm_probe",
-             new=_async_return_ok,
-         ):
+    with (
+        caplog.at_level(logging.WARNING, logger="app.api.v1.endpoints.health"),
+        patch("app.api.v1.endpoints.health._sync_redis_ping", return_value=redis_down),
+        patch("app.api.v1.endpoints.health._sync_celery_ping", return_value=redis_ok),
+        patch(
+            "app.api.v1.endpoints.health._async_llm_probe",
+            new=_async_return_ok,
+        ),
+    ):
         supplied = "corr-test-001"
         resp = client.get(
             "/api/v1/health/ready",
@@ -162,10 +163,7 @@ def test_request_id_appears_on_log_records(
     # not what we want — we want the LINE EMITTED FROM INSIDE THE
     # HANDLER, which proves the ContextVar propagated into the
     # service / route code.
-    matching = [
-        r for r in caplog.records
-        if getattr(r, "request_id", None) == supplied
-    ]
+    matching = [r for r in caplog.records if getattr(r, "request_id", None) == supplied]
     assert matching, (
         "no log record carried the request_id; the filter / "
         "ContextVar plumbing is broken. All captured records: "
@@ -209,24 +207,34 @@ def test_request_id_filter_stamps_dash_when_no_id() -> None:
     string can always render %(request_id)s without KeyError and
     the rendered line is still self-explanatory."""
     record = logging.LogRecord(
-        name="x", level=logging.INFO, pathname="", lineno=0,
-        msg="hi", args=(), exc_info=None,
+        name="x",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="hi",
+        args=(),
+        exc_info=None,
     )
     # No ID set — get_request_id() returns the default "".
     assert get_request_id() == ""
     flt = RequestIdFilter()
     assert flt.filter(record) is True
-    assert record.request_id == "-", (
-        f"filter should stamp '-' as a sentinel; got {record.request_id!r}"
-    )
+    assert (
+        record.request_id == "-"
+    ), f"filter should stamp '-' as a sentinel; got {record.request_id!r}"
 
 
 def test_request_id_filter_stamps_real_id() -> None:
     """When the ContextVar holds a real ID, the filter stamps it
     verbatim onto the record."""
     record = logging.LogRecord(
-        name="x", level=logging.INFO, pathname="", lineno=0,
-        msg="hi", args=(), exc_info=None,
+        name="x",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg="hi",
+        args=(),
+        exc_info=None,
     )
     token = set_request_id("rid-XYZ")
     try:

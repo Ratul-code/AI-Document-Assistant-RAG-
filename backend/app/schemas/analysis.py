@@ -19,7 +19,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ---------------------------------------------------------------------
 # Citation — appears in the response and in `analysis.done` events.
 # ---------------------------------------------------------------------
@@ -118,11 +117,11 @@ class QueryStreamStart(BaseModel):
 
 AnalysisErrorCode = Literal[
     "NO_DOCUMENTS_READY",  # caller has no READY docs (or selected none)
-    "PROVIDER_MISMATCH",   # query-time embedding dim != stored dim
-    "PROVIDER_ERROR",      # LLM call failed (timeout, 5xx, rate limit)
-    "CANCELLED",           # client disconnected mid-stream
-    "INTERNAL",            # unexpected server error
-    "UNAUTHORIZED",        # auth failed (defence-in-depth; should never reach here)
+    "PROVIDER_MISMATCH",  # query-time embedding dim != stored dim
+    "PROVIDER_ERROR",  # LLM call failed (timeout, 5xx, rate limit)
+    "CANCELLED",  # client disconnected mid-stream
+    "INTERNAL",  # unexpected server error
+    "UNAUTHORIZED",  # auth failed (defence-in-depth; should never reach here)
 ]
 
 

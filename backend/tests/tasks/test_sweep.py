@@ -13,7 +13,7 @@ SQLite DB. We:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -71,7 +71,6 @@ def patched_session_factory(sync_db_session):
     # Use the SAME engine as the sync fixture so writes via sync_db_session
     # are visible to the async factory.
     sync_db_session.close()
-    new_sync = sessionmaker(bind=engine, expire_on_commit=False)()
     # Recreate rows from the original session in the new one (the
     # original is closed). We do this by re-running the test's seed
     # later via a hook — instead, simpler: rebind sync_db_session too.
@@ -84,9 +83,7 @@ def patched_session_factory(sync_db_session):
     # we re-create the schema on the new engine, the seed is gone.
     # So tests must seed via this `fresh` session. To keep tests
     # simple, return both.
-    async_factory = async_sessionmaker(
-        bind=engine, expire_on_commit=False
-    )
+    async_factory = async_sessionmaker(bind=engine, expire_on_commit=False)
 
     yield fresh, async_factory
 
@@ -130,15 +127,17 @@ def test_sweep_requeues_learning_docs_older_than_threshold(
     """A LEARNING doc whose `updated_at` is older than the threshold
     must be re-enqueued to the embedding task."""
     sync_session, async_factory = patched_session_factory
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stuck_doc = _seed_doc(
         sync_session,
         status=DocumentStatus.learning,
         updated_at=now - timedelta(minutes=60),
     )
 
-    with patch("app.tasks.sweep.get_session_factory", return_value=async_factory), \
-         patch("app.tasks.sweep.celery_app") as mock_celery:
+    with (
+        patch("app.tasks.sweep.get_session_factory", return_value=async_factory),
+        patch("app.tasks.sweep.celery_app") as mock_celery,
+    ):
         result = sweep_stuck_learning_documents(
             stuck_threshold_minutes=30,
             max_docs_per_run=100,
@@ -158,15 +157,17 @@ def test_sweep_skips_learning_docs_below_threshold(
     patched_session_factory,
 ) -> None:
     sync_session, async_factory = patched_session_factory
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     _seed_doc(
         sync_session,
         status=DocumentStatus.learning,
         updated_at=now - timedelta(minutes=5),
     )
 
-    with patch("app.tasks.sweep.get_session_factory", return_value=async_factory), \
-         patch("app.tasks.sweep.celery_app") as mock_celery:
+    with (
+        patch("app.tasks.sweep.get_session_factory", return_value=async_factory),
+        patch("app.tasks.sweep.celery_app") as mock_celery,
+    ):
         result = sweep_stuck_learning_documents(stuck_threshold_minutes=30)
 
     assert result["ok"] is True
@@ -179,7 +180,7 @@ def test_sweep_ignores_non_learning_docs(patched_session_factory) -> None:
     """READY / FAILED / UPLOADED / PROCESSING docs must never be
     re-enqueued — they're either terminal or handled by other paths."""
     sync_session, async_factory = patched_session_factory
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for status in (
         DocumentStatus.ready,
         DocumentStatus.failed,
@@ -192,8 +193,10 @@ def test_sweep_ignores_non_learning_docs(patched_session_factory) -> None:
             updated_at=now - timedelta(hours=24),
         )
 
-    with patch("app.tasks.sweep.get_session_factory", return_value=async_factory), \
-         patch("app.tasks.sweep.celery_app") as mock_celery:
+    with (
+        patch("app.tasks.sweep.get_session_factory", return_value=async_factory),
+        patch("app.tasks.sweep.celery_app") as mock_celery,
+    ):
         result = sweep_stuck_learning_documents(stuck_threshold_minutes=30)
 
     assert result["found"] == 0
@@ -205,7 +208,7 @@ def test_sweep_respects_max_docs_per_run(patched_session_factory) -> None:
     """The hard cap prevents one tick from enqueueing a thundering
     herd if a long outage leaves many stuck docs at once."""
     sync_session, async_factory = patched_session_factory
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for _ in range(5):
         _seed_doc(
             sync_session,
@@ -213,8 +216,10 @@ def test_sweep_respects_max_docs_per_run(patched_session_factory) -> None:
             updated_at=now - timedelta(minutes=60),
         )
 
-    with patch("app.tasks.sweep.get_session_factory", return_value=async_factory), \
-         patch("app.tasks.sweep.celery_app") as mock_celery:
+    with (
+        patch("app.tasks.sweep.get_session_factory", return_value=async_factory),
+        patch("app.tasks.sweep.celery_app") as mock_celery,
+    ):
         result = sweep_stuck_learning_documents(
             stuck_threshold_minutes=30,
             max_docs_per_run=2,
@@ -230,7 +235,7 @@ def test_sweep_continues_when_one_enqueue_fails(
 ) -> None:
     """A single bad enqueue must not stop the rest of the sweep."""
     sync_session, async_factory = patched_session_factory
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     docs = [
         _seed_doc(
             sync_session,
@@ -249,16 +254,15 @@ def test_sweep_continues_when_one_enqueue_fails(
             raise RuntimeError("broker hiccup")
         return None
 
-    with patch("app.tasks.sweep.get_session_factory", return_value=async_factory), \
-         patch("app.tasks.sweep.celery_app") as mock_celery:
+    with (
+        patch("app.tasks.sweep.get_session_factory", return_value=async_factory),
+        patch("app.tasks.sweep.celery_app") as mock_celery,
+    ):
         mock_celery.send_task.side_effect = fake_send_task
         result = sweep_stuck_learning_documents(stuck_threshold_minutes=30)
 
     assert result["found"] == 3
     assert result["requeued"] == 2
     assert mock_celery.send_task.call_count == 3
-    sent_ids = {
-        call.args[1][0]
-        for call in mock_celery.send_task.call_args_list
-    }
+    sent_ids = {call.args[1][0] for call in mock_celery.send_task.call_args_list}
     assert sent_ids == {str(d.id) for d in docs}

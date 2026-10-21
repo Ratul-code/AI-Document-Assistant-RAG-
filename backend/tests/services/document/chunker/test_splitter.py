@@ -67,7 +67,7 @@ def test_no_sentences_falls_back_to_words() -> None:
 
 def test_chunks_are_at_most_max_tokens() -> None:
     """Sanity: every chunk in a long random-ish text is bounded."""
-    para = ("Sentence one with several words. Sentence two. " * 50)
+    para = "Sentence one with several words. Sentence two. " * 50
     text = "\n\n".join([para] * 10)
     chunks = split_text(text)
     assert len(chunks) > 1

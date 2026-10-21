@@ -142,8 +142,7 @@ async def add_log_async(
         )
     except (TypeError, ValueError):
         logger.warning(
-            "add_log_async: metadata not JSON-serialisable, storing NULL "
-            "event_type=%s",
+            "add_log_async: metadata not JSON-serialisable, storing NULL " "event_type=%s",
             event_type,
         )
         metadata_json = None

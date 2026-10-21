@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import AsyncIterator
+from datetime import UTC
 from pathlib import Path
 from types import SimpleNamespace
-from typing import AsyncIterator
 from uuid import UUID, uuid4
 
 import pytest
@@ -55,7 +56,7 @@ class _FakeConversationStore:
         self.next_id = 0
 
         # last_message_at defaults to now
-        self.conv.last_message_at = datetime.now(tz=timezone.utc)
+        self.conv.last_message_at = datetime.now(tz=UTC)
 
     async def get_conversation(self, db, conversation_id, *, owner_id):
         if conversation_id == self.conv.id and owner_id == self.conv.owner_id:
@@ -63,8 +64,15 @@ class _FakeConversationStore:
         return None
 
     async def insert_message(
-        self, db, *, conversation_id, owner_id, role, content,
-        citations=None, error_code=None,
+        self,
+        db,
+        *,
+        conversation_id,
+        owner_id,
+        role,
+        content,
+        citations=None,
+        error_code=None,
     ):
         if conversation_id != self.conv.id:
             return None
@@ -78,12 +86,11 @@ class _FakeConversationStore:
         )
         self.messages.append((role.value, content, citations, error_code))
         from datetime import datetime, timezone
-        self.conv.last_message_at = datetime.now(tz=timezone.utc)
+
+        self.conv.last_message_at = datetime.now(tz=UTC)
         return row
 
-    async def list_conversation_document_ids(
-        self, db, *, conversation_id, owner_id
-    ):
+    async def list_conversation_document_ids(self, db, *, conversation_id, owner_id):
         return list(self.doc_ids)
 
 
@@ -143,9 +150,9 @@ def _candidate(vector: list[float] | None = None) -> CandidateRow:
 
 def _patch_pipeline(monkeypatch, store, *, candidates_rows, llm, ready_doc_ids=()):
     """Patch the four repo/db touchpoints the orchestrator uses."""
-    import app.services.document.analyser as analyser_pkg
     import app.db.sync_session as sync_mod
     import app.repositories.document as document_mod
+    import app.services.document.analyser as analyser_pkg
 
     # Candidate-row fetcher.
     def _cand(db, *, owner_id, document_ids=None):
@@ -155,12 +162,14 @@ def _patch_pipeline(monkeypatch, store, *, candidates_rows, llm, ready_doc_ids=(
 
     # Sync-session shim.
     monkeypatch.setattr(
-        sync_mod, "run_in_sync_session",
+        sync_mod,
+        "run_in_sync_session",
         lambda fn, *a, **kw: fn(None, *a, **kw),
     )
 
     # list_ready_documents (used by scope resolution in all-docs mode).
     rows = [SimpleNamespace(id=v) for v in ready_doc_ids]
+
     async def _ready(db, *, owner_id):
         return list(rows)
 
@@ -200,22 +209,23 @@ def make_conv():
 
 
 @pytest.mark.asyncio
-async def test_happy_path_persists_user_and_assistant_with_citations(
-    monkeypatch, make_conv
-):
+async def test_happy_path_persists_user_and_assistant_with_citations(monkeypatch, make_conv):
     conv = make_conv()
     store = _FakeConversationStore(conv, doc_ids=[uuid4()])
 
     llm = _FakeLLMProvider(tokens=["Hello", " ", "world"])
     _patch_pipeline(
-        monkeypatch, store,
+        monkeypatch,
+        store,
         candidates_rows=[_candidate()],
         llm=llm,
     )
 
     import app.services.document.analyser as analyser_pkg
     from app.services.document.analyser import (
-        AnalysisDoneEvent, AnalysisErrorEvent, AnalysisTokenEvent,
+        AnalysisDoneEvent,
+        AnalysisErrorEvent,
+        AnalysisTokenEvent,
         analyse_query_with_conversation,
     )
 
@@ -233,7 +243,7 @@ async def test_happy_path_persists_user_and_assistant_with_citations(
         if isinstance(ev, AnalysisTokenEvent):
             tokens.append(ev.text)
             assert ev.conversation_id == conv.id
-        elif isinstance(ev, (AnalysisDoneEvent, AnalysisErrorEvent)):
+        elif isinstance(ev, AnalysisDoneEvent | AnalysisErrorEvent):
             terminal = ev
             assert ev.conversation_id == conv.id
 
@@ -257,22 +267,20 @@ async def test_happy_path_persists_user_and_assistant_with_citations(
 
 
 @pytest.mark.asyncio
-async def test_provider_error_persists_assistant_with_error_code(
-    monkeypatch, make_conv
-):
+async def test_provider_error_persists_assistant_with_error_code(monkeypatch, make_conv):
     conv = make_conv()
     store = _FakeConversationStore(conv, doc_ids=[uuid4()])
-    llm = _FakeLLMProvider(
-        tokens=[], raise_on_stream=RuntimeError("LLM down")
-    )
+    llm = _FakeLLMProvider(tokens=[], raise_on_stream=RuntimeError("LLM down"))
     _patch_pipeline(
-        monkeypatch, store,
+        monkeypatch,
+        store,
         candidates_rows=[_candidate()],
         llm=llm,
     )
 
     from app.services.document.analyser import (
-        AnalysisDoneEvent, AnalysisErrorEvent,
+        AnalysisDoneEvent,
+        AnalysisErrorEvent,
         analyse_query_with_conversation,
     )
 
@@ -286,7 +294,7 @@ async def test_provider_error_persists_assistant_with_error_code(
         llm_provider=llm,
         embedding_model=_FakeEmbeddingModel(),
     ):
-        if isinstance(ev, (AnalysisDoneEvent, AnalysisErrorEvent)):
+        if isinstance(ev, AnalysisDoneEvent | AnalysisErrorEvent):
             terminal = ev
 
     assert isinstance(terminal, AnalysisErrorEvent)
@@ -296,27 +304,27 @@ async def test_provider_error_persists_assistant_with_error_code(
     assert len(store.messages) == 2
     assert store.messages[0][0] == "user"
     assert store.messages[1][0] == "assistant"
-    assert store.messages[1][1] == ""          # empty content
+    assert store.messages[1][1] == ""  # empty content
     assert store.messages[1][3] == "PROVIDER_ERROR"  # error_code
-    assert store.messages[1][2] is None         # no citations
+    assert store.messages[1][2] is None  # no citations
 
 
 @pytest.mark.asyncio
-async def test_no_documents_yields_no_documents_ready(
-    monkeypatch, make_conv
-):
+async def test_no_documents_yields_no_documents_ready(monkeypatch, make_conv):
     """If the saved scope is empty AND no override, persist user row +
     yield NO_DOCUMENTS_READY so the UI can prompt for doc selection."""
     conv = make_conv()
     store = _FakeConversationStore(conv, doc_ids=[])
     _patch_pipeline(
-        monkeypatch, store,
-        candidates_rows=[],   # would-be candidates don't matter — short-circuit
+        monkeypatch,
+        store,
+        candidates_rows=[],  # would-be candidates don't matter — short-circuit
         llm=_FakeLLMProvider(tokens=[]),
     )
 
     from app.services.document.analyser import (
-        AnalysisDoneEvent, AnalysisErrorEvent,
+        AnalysisDoneEvent,
+        AnalysisErrorEvent,
         analyse_query_with_conversation,
     )
 
@@ -330,7 +338,7 @@ async def test_no_documents_yields_no_documents_ready(
         llm_provider=_FakeLLMProvider(tokens=[]),
         embedding_model=_FakeEmbeddingModel(),
     ):
-        if isinstance(ev, (AnalysisDoneEvent, AnalysisErrorEvent)):
+        if isinstance(ev, AnalysisDoneEvent | AnalysisErrorEvent):
             terminal = ev
 
     assert isinstance(terminal, AnalysisErrorEvent)
@@ -341,19 +349,19 @@ async def test_no_documents_yields_no_documents_ready(
 
 
 @pytest.mark.asyncio
-async def test_unknown_conversation_yields_unauthorized(
-    monkeypatch, make_conv
-):
+async def test_unknown_conversation_yields_unauthorized(monkeypatch, make_conv):
     conv = make_conv()
     store = _FakeConversationStore(conv, doc_ids=[uuid4()])
     _patch_pipeline(
-        monkeypatch, store,
+        monkeypatch,
+        store,
         candidates_rows=[_candidate()],
         llm=_FakeLLMProvider(tokens=[]),
     )
 
     from app.services.document.analyser import (
-        AnalysisDoneEvent, AnalysisErrorEvent,
+        AnalysisDoneEvent,
+        AnalysisErrorEvent,
         analyse_query_with_conversation,
     )
 
@@ -367,7 +375,7 @@ async def test_unknown_conversation_yields_unauthorized(
         llm_provider=_FakeLLMProvider(tokens=[]),
         embedding_model=_FakeEmbeddingModel(),
     ):
-        if isinstance(ev, (AnalysisDoneEvent, AnalysisErrorEvent)):
+        if isinstance(ev, AnalysisDoneEvent | AnalysisErrorEvent):
             terminal = ev
 
     assert isinstance(terminal, AnalysisErrorEvent)
@@ -377,9 +385,7 @@ async def test_unknown_conversation_yields_unauthorized(
 
 
 @pytest.mark.asyncio
-async def test_override_document_ids_used_for_scope(
-    monkeypatch, make_conv
-):
+async def test_override_document_ids_used_for_scope(monkeypatch, make_conv):
     """`document_ids` on the submit body overrides the saved scope.
 
     The orchestrator forwards `document_ids` into `analyse_query`,
@@ -392,9 +398,9 @@ async def test_override_document_ids_used_for_scope(
     override_id = uuid4()
     captured_scope: dict = {}
 
-    import app.services.document.analyser as analyser_pkg
     import app.db.sync_session as sync_mod
     import app.repositories.document as document_mod
+    import app.services.document.analyser as analyser_pkg
 
     def _cand(db, *, owner_id, document_ids=None):
         captured_scope["document_ids"] = document_ids
@@ -402,11 +408,14 @@ async def test_override_document_ids_used_for_scope(
 
     monkeypatch.setattr(analyser_pkg, "fetch_candidate_rows", _cand)
     monkeypatch.setattr(
-        sync_mod, "run_in_sync_session",
+        sync_mod,
+        "run_in_sync_session",
         lambda fn, *a, **kw: fn(None, *a, **kw),
     )
+
     async def _ready(db, *, owner_id):
         return []
+
     monkeypatch.setattr(document_mod, "list_ready_documents", _ready)
     monkeypatch.setattr(analyser_pkg.conversation_repo, "get_conversation", store.get_conversation)
     monkeypatch.setattr(analyser_pkg.conversation_repo, "insert_message", store.insert_message)
@@ -424,7 +433,7 @@ async def test_override_document_ids_used_for_scope(
         question="Hi",
         stream_id=uuid4(),
         conversation_id=conv.id,
-        document_ids=[override_id],   # <-- the override
+        document_ids=[override_id],  # <-- the override
         llm_provider=_FakeLLMProvider(tokens=["ok"]),
         embedding_model=_FakeEmbeddingModel(),
     ):
@@ -434,9 +443,7 @@ async def test_override_document_ids_used_for_scope(
 
 
 @pytest.mark.asyncio
-async def test_cancellation_does_not_persist_assistant(
-    monkeypatch, make_conv
-):
+async def test_cancellation_does_not_persist_assistant(monkeypatch, make_conv):
     """If the consumer of the async generator breaks out early (e.g.
     client disconnects), the orchestrator must NOT persist a partial
     assistant row."""
@@ -449,17 +456,20 @@ async def test_cancellation_does_not_persist_assistant(
             while True:
                 yield "."
 
-    import app.services.document.analyser as analyser_pkg
     import app.db.sync_session as sync_mod
     import app.repositories.document as document_mod
+    import app.services.document.analyser as analyser_pkg
 
     monkeypatch.setattr(analyser_pkg, "fetch_candidate_rows", lambda *a, **kw: [_candidate()])
     monkeypatch.setattr(
-        sync_mod, "run_in_sync_session",
+        sync_mod,
+        "run_in_sync_session",
         lambda fn, *a, **kw: fn(None, *a, **kw),
     )
+
     async def _ready(db, *, owner_id):
         return []
+
     monkeypatch.setattr(document_mod, "list_ready_documents", _ready)
     monkeypatch.setattr(analyser_pkg.conversation_repo, "get_conversation", store.get_conversation)
     monkeypatch.setattr(analyser_pkg.conversation_repo, "insert_message", store.insert_message)
@@ -470,7 +480,8 @@ async def test_cancellation_does_not_persist_assistant(
     )
 
     from app.services.document.analyser import (
-        AnalysisDoneEvent, analyse_query_with_conversation,
+        AnalysisDoneEvent,
+        analyse_query_with_conversation,
     )
 
     # Consume only one token, then break out.

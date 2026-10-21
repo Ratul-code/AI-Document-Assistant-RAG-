@@ -44,7 +44,7 @@ from app.core.rate_limit import limiter
 from app.db.session import get_session_factory
 from app.repositories import conversation as conversation_repo
 from app.repositories import document as document_repo
-from app.schemas.analysis import AnalysisErrorCode, QueryCitation, QueryStreamStart
+from app.schemas.analysis import QueryCitation, QueryStreamStart
 from app.schemas.conversation import (
     ConversationCreate,
     ConversationListItem,
@@ -86,9 +86,7 @@ async def _read_conversation(
 ) -> ConversationRead:
     """Load + 404 helper. Builds the wire-shaped `ConversationRead` with
     the resolved doc-selection list baked in."""
-    conv = await conversation_repo.get_conversation(
-        db, conversation_id, owner_id=owner_id
-    )
+    conv = await conversation_repo.get_conversation(db, conversation_id, owner_id=owner_id)
     if conv is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -210,9 +208,7 @@ async def create_conversation(
 ) -> ConversationRead:
     """Start a new chat with an optional document selection."""
     if not payload.scope_all_documents and payload.document_ids:
-        await _validate_doc_ids(
-            db, owner_id=current_user.id, document_ids=payload.document_ids
-        )
+        await _validate_doc_ids(db, owner_id=current_user.id, document_ids=payload.document_ids)
 
     conv = await conversation_repo.create_conversation(
         db,
@@ -267,9 +263,7 @@ async def list_conversations(
             )
         )
 
-    return ConversationListResponse(
-        items=out, total=total, limit=limit, offset=offset
-    )
+    return ConversationListResponse(items=out, total=total, limit=limit, offset=offset)
 
 
 @router.get(
@@ -314,9 +308,7 @@ async def update_conversation(
     # scope (empty list + scope_all_documents stays False), the next
     # query will surface NO_DOCUMENTS_READY — by design.
     if payload.document_ids is not None and not payload.scope_all_documents:
-        await _validate_doc_ids(
-            db, owner_id=current_user.id, document_ids=payload.document_ids
-        )
+        await _validate_doc_ids(db, owner_id=current_user.id, document_ids=payload.document_ids)
 
     await conversation_repo.update_conversation(
         db,
@@ -397,9 +389,7 @@ async def list_messages(
                 chat history so the client can show the newest turns
                 immediately, then prepend older turns on scroll.
     """
-    owned = await conversation_repo.get_conversation(
-        db, conversation_id, owner_id=current_user.id
-    )
+    owned = await conversation_repo.get_conversation(db, conversation_id, owner_id=current_user.id)
     if owned is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -435,9 +425,7 @@ async def list_messages(
             )
         )
 
-    return ConversationMessageListResponse(
-        items=items, total=total, limit=limit, offset=offset
-    )
+    return ConversationMessageListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post(
@@ -469,9 +457,7 @@ async def submit_message(
     ``analyse_query_with_conversation``.
     """
     # 404 if conversation not owned.
-    owned = await conversation_repo.get_conversation(
-        db, conversation_id, owner_id=current_user.id
-    )
+    owned = await conversation_repo.get_conversation(db, conversation_id, owner_id=current_user.id)
     if owned is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -480,9 +466,7 @@ async def submit_message(
 
     # Validate any override document ids.
     if payload.document_ids is not None:
-        await _validate_doc_ids(
-            db, owner_id=current_user.id, document_ids=payload.document_ids
-        )
+        await _validate_doc_ids(db, owner_id=current_user.id, document_ids=payload.document_ids)
 
     # Per-user concurrency cap — same pattern as the analysis endpoint.
     user_id = current_user.id
@@ -496,8 +480,7 @@ async def submit_message(
             detail={
                 "code": "INTERNAL",
                 "message": (
-                    f"Too many in-flight streams (cap={cap}). "
-                    "Wait for one to finish or cancel."
+                    f"Too many in-flight streams (cap={cap}). " "Wait for one to finish or cancel."
                 ),
             },
         )
@@ -554,7 +537,8 @@ async def submit_message(
         except Exception as exc:
             logger.exception(
                 "conversation submit crashed conv_id=%s err=%s",
-                conversation_id, exc,
+                conversation_id,
+                exc,
             )
             publish_analysis_error(
                 user_id,
@@ -580,7 +564,10 @@ async def submit_message(
 
     logger.info(
         "conversation submit user_id=%s conv_id=%s stream_id=%s question_len=%d",
-        user_id, conversation_id, stream_id, len(payload.question),
+        user_id,
+        conversation_id,
+        stream_id,
+        len(payload.question),
     )
 
     return QueryStreamStart(stream_id=stream_id)
@@ -634,9 +621,7 @@ async def cancel_message(
     """
     # 1. Owner-scoped conversation check. 404 on cross-owner access
     #    so we don't leak existence of other users' chats.
-    owned = await conversation_repo.get_conversation(
-        db, conversation_id, owner_id=current_user.id
-    )
+    owned = await conversation_repo.get_conversation(db, conversation_id, owner_id=current_user.id)
     if owned is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -655,7 +640,9 @@ async def cancel_message(
 
     logger.info(
         "conversation stream cancelled user_id=%s conv_id=%s stream_id=%s",
-        current_user.id, conversation_id, stream_id,
+        current_user.id,
+        conversation_id,
+        stream_id,
     )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

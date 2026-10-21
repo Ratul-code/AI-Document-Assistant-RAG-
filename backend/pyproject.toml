@@ -49,11 +49,37 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "C4", "N"]
 ignore = [
     "E501",   # line too long — handled by formatter, not a real bug
     "B008",   # function call in default argument — common in FastAPI Depends()
+    "B904",   # `raise ... from err` — our API deliberately returns a clean
+              # `{"detail": "..."}` body and we do not want the internal
+              # exception chained into the response. The handler maps every
+              # error to a stable HTTPException anyway, so chaining would
+              # only add noise to logs.
+    "SIM105", # `try/except/pass` → `contextlib.suppress` — purely stylistic.
+              # For "best-effort cleanup" blocks (consumer cancel, health
+              # probe, internal lock cleanup) the explicit `try/except/pass`
+              # form reads better than a `with suppress(...)` because the
+              # reader can see what exception type we are swallowing.
+    "SIM102", # Nested `if` → single `if`. Trivial readability rewrite that
+              # we leave to the formatter's discretion.
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# SQLAlchemy models use forward references in `Mapped[...]` relationship
+# annotations (e.g. `Mapped[list[ConversationDocument]]`) to break circular
+# imports between modules that reference each other. The names are resolved
+# at mapper-configuration time by SQLAlchemy, not at import time, so ruff
+# flags them as F821 undefined names even though they are always valid at
+# runtime. Do NOT "fix" these by adding imports — that reintroduces the
+# circular-import bug the forward references exist to avoid.
+"app/models/**/*.py" = ["F821"]
+
 # Tests are allowed to be a bit messier (long lines, unused imports for fixtures).
-"tests/**/*.py" = ["E402", "F401", "B011"]
+# N803/N806 are ignored here because `SessionLocal` / `Session` are the
+# conventional SQLAlchemy session-factory names — renaming them across every
+# test would be a large diff with no readability benefit. App code stays strict.
+"tests/**/*.py" = ["E402", "F401", "B011", "N803", "N806"]
+"eval/tests/**/*.py" = ["E402", "F401", "B011", "N803", "N806"]
+"eval/scripts/**/*.py" = ["N803", "N806"]
 # Alembic migrations are auto-generated; don't lint them.
 "alembic/**/*.py" = ["E", "F", "I", "B", "UP"]
 

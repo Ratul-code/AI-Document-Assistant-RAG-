@@ -36,7 +36,7 @@ Design notes
 from __future__ import annotations
 
 import logging
-from typing import Any, Sequence
+from typing import Any
 from uuid import UUID
 
 from app.repositories import conversation as conversation_repo
@@ -209,9 +209,7 @@ async def fetch_recent_turns(
                 # pairs, but be defensive). Skip the orphan.
                 continue
             out.append(LLMMessage(role="user", content=user_payload[1]))
-            truncated = truncate_to_tokens(
-                content, max_tokens=max_assistant_tokens
-            )
+            truncated = truncate_to_tokens(content, max_tokens=max_assistant_tokens)
             out.append(LLMMessage(role="assistant", content=truncated))
             pairs += 1
             if pairs >= max_turns:
@@ -223,7 +221,9 @@ async def fetch_recent_turns(
     if out:
         logger.info(
             "fetch_recent_turns: conv_id=%s pairs=%d total_msgs=%d",
-            conversation_id, pairs, len(out),
+            conversation_id,
+            pairs,
+            len(out),
         )
     return out
 

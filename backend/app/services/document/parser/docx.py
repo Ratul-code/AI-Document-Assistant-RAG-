@@ -48,9 +48,7 @@ class DocxParser:
                 paragraph_count += 1
 
                 style_name = (
-                    (content.style.name or "").lower()
-                    if getattr(content, "style", None)
-                    else ""
+                    (content.style.name or "").lower() if getattr(content, "style", None) else ""
                 )
                 # Strict match — "heading 10" must not match.
                 if style_name in {"heading 1", "title"}:

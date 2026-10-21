@@ -9,7 +9,7 @@ This makes it easy to:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from supabase import Client, create_client
 
@@ -23,9 +23,9 @@ class SupabaseStorage:
     doesn't fail when env vars are missing (useful for unit tests).
     """
 
-    def __init__(self, settings: Optional[Settings] = None) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
-        self._client: Optional[Client] = None
+        self._client: Client | None = None
 
     # ------------------------------------------------------------------
     # Internals
@@ -77,11 +77,11 @@ class SupabaseStorage:
             storage_path,
         )
         # Normalise key name (Supabase returns "signedURL")
-        signed = response.get("signedURL") or response.get("signed_url") or response.get("signedUrl")
+        signed = (
+            response.get("signedURL") or response.get("signed_url") or response.get("signedUrl")
+        )
         if not signed:
-            raise RuntimeError(
-                f"Supabase did not return a signed URL. Got: {response!r}"
-            )
+            raise RuntimeError(f"Supabase did not return a signed URL. Got: {response!r}")
         return {"signed_url": signed, "storage_path": storage_path}
 
     def delete_file(self, bucket: str, storage_path: str) -> None:
@@ -106,9 +106,7 @@ class SupabaseStorage:
         # `download()` returns bytes directly in supabase-py >= 2.x.
         data = client.storage.from_(bucket).download(storage_path)
         if not data:
-            raise RuntimeError(
-                f"Supabase returned empty body for {bucket}/{storage_path}"
-            )
+            raise RuntimeError(f"Supabase returned empty body for {bucket}/{storage_path}")
         return data
 
     def get_public_url(self, bucket: str, storage_path: str) -> str:
@@ -118,7 +116,7 @@ class SupabaseStorage:
 
 
 # Module-level singleton (matches the pattern of get_settings()).
-_supabase_storage: Optional[SupabaseStorage] = None
+_supabase_storage: SupabaseStorage | None = None
 
 
 def get_supabase_storage() -> SupabaseStorage:

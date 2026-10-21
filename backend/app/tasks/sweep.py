@@ -28,10 +28,9 @@ re-enqueue fails. Worst case the next sweep tick retries.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from celery import shared_task
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.celery_app import celery_app  # noqa: F401 -- keeps shared_task bound to our app
 from app.db.session import get_session_factory
@@ -52,7 +51,7 @@ DEFAULT_STUCK_THRESHOLD_MINUTES = 30
 async def _find_stuck_documents(threshold: datetime) -> list:
     """Async helper that opens its own session and returns stuck doc rows."""
     session_factory = get_session_factory()
-    async with session_factory() as db:  # type: AsyncSession
+    async with session_factory() as db:
         return list(await find_stuck_learning(db, older_than=threshold))
 
 
@@ -76,18 +75,14 @@ def sweep_stuck_learning_documents(
     Returns a small dict for observability. Never raises; sweep tasks
     must be safe to run on a schedule without an operator babysitting.
     """
-    threshold = datetime.now(timezone.utc) - timedelta(
-        minutes=stuck_threshold_minutes
-    )
+    threshold = datetime.now(UTC) - timedelta(minutes=stuck_threshold_minutes)
 
     try:
         stuck_docs = _run_async(_find_stuck_documents, threshold)
     except Exception:
         # Don't blow up the Beat loop — log and exit cleanly. The next
         # tick will retry.
-        logger.exception(
-            "sweep_stuck_learning_documents: failed to query stuck docs"
-        )
+        logger.exception("sweep_stuck_learning_documents: failed to query stuck docs")
         return {"ok": False, "error": "query_failed"}
 
     if not stuck_docs:
@@ -111,13 +106,14 @@ def sweep_stuck_learning_documents(
             logger.warning(
                 "sweep_stuck_learning_documents: requeued stuck doc "
                 "document_id=%s owner_id=%s last_updated=%s",
-                doc.id, doc.owner_id, doc.updated_at,
+                doc.id,
+                doc.owner_id,
+                doc.updated_at,
             )
         except Exception:
             # One bad enqueue mustn't kill the rest of the sweep.
             logger.exception(
-                "sweep_stuck_learning_documents: failed to enqueue "
-                "document_id=%s",
+                "sweep_stuck_learning_documents: failed to enqueue " "document_id=%s",
                 doc.id,
             )
 

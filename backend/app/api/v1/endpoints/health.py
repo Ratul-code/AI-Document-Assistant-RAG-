@@ -32,19 +32,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 import httpx
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel
 from redis import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
 
-from app.core.config import get_settings, get_llm_api_key
+from app.core.config import get_llm_api_key, get_settings
 from app.db.session import get_db
 
 logger = logging.getLogger(__name__)
@@ -110,7 +109,7 @@ async def _run_check(
     t0 = time.monotonic()
     try:
         ok, detail = await asyncio.wait_for(probe(), timeout=timeout_s)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         elapsed = (time.monotonic() - t0) * 1000
         logger.warning("readiness: %s timed out after %.0fms", name, elapsed)
         return CheckResult(
@@ -120,9 +119,7 @@ async def _run_check(
         )
     except Exception as exc:  # noqa: BLE001 — never let a probe raise
         elapsed = (time.monotonic() - t0) * 1000
-        logger.warning(
-            "readiness: %s raised %s: %s", name, type(exc).__name__, exc
-        )
+        logger.warning("readiness: %s raised %s: %s", name, type(exc).__name__, exc)
         return CheckResult(
             status="down",
             latency_ms=round(elapsed, 1),
@@ -220,7 +217,7 @@ async def health_check() -> HealthResponse:
         status="ok",
         service=_SERVICE_NAME,
         version=_APP_VERSION,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
     )
 
 
@@ -233,7 +230,9 @@ async def health_check() -> HealthResponse:
         503: {"description": "At least one dependency is down."},
     },
 )
-async def readiness_check(response: Response, db: AsyncSession = Depends(get_db)) -> ReadinessResponse:
+async def readiness_check(
+    response: Response, db: AsyncSession = Depends(get_db)
+) -> ReadinessResponse:
     """Readiness probe — every external dependency is reachable.
 
     Probes, in order, with bounded timeouts:
@@ -294,6 +293,6 @@ async def readiness_check(response: Response, db: AsyncSession = Depends(get_db)
         status="ready" if all_up else "not_ready",
         service=_SERVICE_NAME,
         version=_APP_VERSION,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         checks=checks,
     )

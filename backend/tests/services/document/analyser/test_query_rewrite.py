@@ -27,8 +27,8 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator
 
 import pytest
 
@@ -40,7 +40,6 @@ from app.services.ai.llm import LLMMessage  # noqa: E402
 from app.services.document.analyser.query_rewrite import (  # noqa: E402
     rewrite_query_for_retrieval,
 )
-
 
 # ---------------------------------------------------------------------
 # Fakes
@@ -113,7 +112,9 @@ def _history() -> list[LLMMessage]:
 
 @pytest.mark.asyncio
 async def test_provider_receives_system_and_user_message_with_history():
-    fake = _FakeLLMProvider(complete_return="Compare FastAPI and Flask for websocket-heavy applications")
+    fake = _FakeLLMProvider(
+        complete_return="Compare FastAPI and Flask for websocket-heavy applications"
+    )
     out = await rewrite_query_for_retrieval(
         history=_history(),
         question="what about websocket-heavy apps?",

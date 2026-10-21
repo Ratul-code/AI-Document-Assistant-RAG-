@@ -22,7 +22,6 @@ from app.services.document.retrieval.hybrid import (
     reciprocal_rank_fusion,
 )
 
-
 # ---------------------------------------------------------------------
 # Fixtures: small but realistic corpus shape
 # ---------------------------------------------------------------------
@@ -58,7 +57,11 @@ def three_doc_corpus():
     return [
         _row("The patient developed a mild fever and was discharged.", idx=0, doc_id=doc_a),
         _row("HCV infection is a major cause of liver disease worldwide.", idx=0, doc_id=doc_b),
-        _row("Recent studies show that HCV treatment with antivirals is effective.", idx=0, doc_id=doc_c),
+        _row(
+            "Recent studies show that HCV treatment with antivirals is effective.",
+            idx=0,
+            doc_id=doc_c,
+        ),
     ]
 
 

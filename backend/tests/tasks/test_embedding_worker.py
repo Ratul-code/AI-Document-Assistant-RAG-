@@ -122,11 +122,15 @@ def test_process_one_document_embeds_pending_chunks(sync_db_session) -> None:
     assert result["succeeded"] == 3
     assert result["failed"] == 0
 
-    rows = sync_db_session.execute(
-        select(DocumentEmbedding).join(
-            DocumentChunk, DocumentChunk.id == DocumentEmbedding.chunk_id
+    rows = (
+        sync_db_session.execute(
+            select(DocumentEmbedding).join(
+                DocumentChunk, DocumentChunk.id == DocumentEmbedding.chunk_id
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 3
     for row in rows:
         assert row.status == EmbeddingStatus.succeeded
@@ -158,9 +162,7 @@ def test_process_one_document_flips_to_failed_when_every_chunk_fails(
         def embed(self, text: str):  # pragma: no cover - batch path is hit first
             raise RuntimeError("simulated provider outage")
 
-    monkeypatch.setattr(
-        "app.tasks.embedding.get_default_embedding_model", _AlwaysFailModel
-    )
+    monkeypatch.setattr("app.tasks.embedding.get_default_embedding_model", _AlwaysFailModel)
 
     owner_id, doc_id = _seed(sync_db_session, ["a", "b"])
 
@@ -179,9 +181,11 @@ def test_process_one_document_flips_to_failed_when_every_chunk_fails(
 def test_process_one_document_skips_already_embedded(sync_db_session) -> None:
     owner_id, doc_id = _seed(sync_db_session, ["a", "b"])
     # Pre-embed one chunk.
-    chunks = sync_db_session.execute(
-        select(DocumentChunk).order_by(DocumentChunk.chunk_index)
-    ).scalars().all()
+    chunks = (
+        sync_db_session.execute(select(DocumentChunk).order_by(DocumentChunk.chunk_index))
+        .scalars()
+        .all()
+    )
 
     upsert_embedding(
         sync_db_session,

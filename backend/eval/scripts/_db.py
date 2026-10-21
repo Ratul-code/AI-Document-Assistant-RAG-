@@ -27,9 +27,9 @@ up doesn't leak into the next one).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 from uuid import UUID
 
 from sqlalchemy import create_engine
@@ -41,13 +41,12 @@ from sqlalchemy.orm import Session, sessionmaker
 # `Base.metadata.create_all()` runs against an empty metadata and the
 # SQL store has zero tables.
 from app.db.base import Base  # noqa: F401
-from app.models.user import User  # noqa: F401
 from app.models.document import Document, DocumentStatus  # noqa: F401
-from app.models.document_page import DocumentPage  # noqa: F401
 from app.models.document_chunk import DocumentChunk  # noqa: F401
 from app.models.document_embedding import DocumentEmbedding, EmbeddingStatus  # noqa: F401
+from app.models.document_page import DocumentPage  # noqa: F401
+from app.models.user import User  # noqa: F401
 from app.services.pubsub import ws_publisher
-
 
 _PATCHED: bool = False
 _ORIGINAL_PUBLISH: object | None = None

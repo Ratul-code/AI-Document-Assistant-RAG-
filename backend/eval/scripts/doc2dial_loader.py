@@ -81,7 +81,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-
 EVAL_DIR = Path(__file__).resolve().parents[1]  # .../backend/eval
 CACHE_ROOT = EVAL_DIR / ".cache"
 
@@ -100,9 +99,7 @@ EXPECTED_FILES: tuple[str, ...] = (
 # Single canonical source — the official doc2dial.github.io release.
 # (Earlier we tried the GitHub release tag and a `/data/` URL, both
 # 404; this is the one the upstream `doc2dial.py` TFDS loader uses.)
-SOURCE_URLS: tuple[str, ...] = (
-    "https://doc2dial.github.io/file/doc2dial_v1.0.1.zip",
-)
+SOURCE_URLS: tuple[str, ...] = ("https://doc2dial.github.io/file/doc2dial_v1.0.1.zip",)
 
 
 def cache_dir_for(dataset: str) -> Path:
@@ -125,9 +122,7 @@ def _download_and_extract(url: str, dest_dir: Path) -> None:
     (`__MACOSX/`, READMEs, etc.) is ignored.
     """
     print(f"  [download] {url}")
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "puku-eval/1.0 (+doc2dial loader)"}
-    )
+    req = urllib.request.Request(url, headers={"User-Agent": "puku-eval/1.0 (+doc2dial loader)"})
     with urllib.request.urlopen(req, timeout=120) as resp:
         data = resp.read()
     with zipfile.ZipFile(BytesIO(data)) as zf:
@@ -168,9 +163,7 @@ def _iter_all_documents(raw_docs: dict) -> list[tuple[str, str, dict]]:
     return out
 
 
-def _iter_all_dialogues(
-    raw_dial: dict, split: str
-) -> list[dict]:
+def _iter_all_dialogues(raw_dial: dict, split: str) -> list[dict]:
     """Flatten ``{"dial_data": {<domain>: {<doc_id>: [dial, dial, ...]}}}``
     into a list of dialogue dicts, one per `dial_id`.
     """
@@ -324,7 +317,7 @@ def load_dialogue_turns(dataset: str) -> list[dict]:
                 utterance = str(t.get("utterance", "")).strip()
                 # Find the next agent turn to use as the gold answer.
                 agent_answer = ""
-                for nxt in turns[idx + 1:]:
+                for nxt in turns[idx + 1 :]:
                     if isinstance(nxt, dict) and nxt.get("role") == "agent":
                         agent_answer = str(nxt.get("utterance", "")).strip()
                         break
@@ -529,9 +522,7 @@ def is_standalone_question(turn: dict) -> bool:
             if "?" not in text:
                 return False
             break
-    if "?" not in text and len(tokens) < 8:
-        return False
-    return True
+    return not ("?" not in text and len(tokens) < 8)
 
 
 def filter_standalone_questions(turns: list[dict]) -> list[dict]:
@@ -665,8 +656,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  source {url} failed: {exc}", file=sys.stderr)
         if not is_cached(args.dataset):
             print(
-                f"ERROR: failed to download Doc2Dial from any source. "
-                f"Last error: {last_err}",
+                f"ERROR: failed to download Doc2Dial from any source. " f"Last error: {last_err}",
                 file=sys.stderr,
             )
             return 2
@@ -674,11 +664,11 @@ def main(argv: list[str] | None = None) -> int:
     # Subset selection preview — useful so the user sees the cap.
     documents = load_documents(args.dataset)
     turns = load_dialogue_turns(args.dataset)
-    documents_kept, turns_kept = cap_by_turns(
-        turns, documents, max_turns=args.max_turns
-    )
+    documents_kept, turns_kept = cap_by_turns(turns, documents, max_turns=args.max_turns)
 
-    sizes = {name: (cache / name).stat().st_size for name in EXPECTED_FILES if (cache / name).exists()}
+    sizes = {
+        name: (cache / name).stat().st_size for name in EXPECTED_FILES if (cache / name).exists()
+    }
     total = sum(sizes.values())
     print(
         f"Cached {args.dataset} ({total / 1024:.1f} KB total) under {cache}: "

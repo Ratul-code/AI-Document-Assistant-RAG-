@@ -213,7 +213,8 @@ def get_default_reranker() -> Reranker:
             "sentence-transformers and restart the process.",
             settings.analysis_rerank_model,
             settings.analysis_rerank_device,
-            type(exc).__name__, exc,
+            type(exc).__name__,
+            exc,
         )
         _reranker_singleton = NoneReranker()
     return _reranker_singleton

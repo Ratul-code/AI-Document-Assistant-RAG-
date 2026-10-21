@@ -22,6 +22,7 @@ import pytest
 def _make_row(*, title: str, text: str):
     """Build a minimal CandidateRow-shaped object for the eval helper."""
     from app.repositories.embedding_search import CandidateRow
+
     return CandidateRow(
         chunk_id=uuid4(),
         document_id=uuid4(),
@@ -58,15 +59,17 @@ def test_rerank_chunk_ids_returns_correct_chunk_ids_in_reranker_order(monkeypatc
     order, not the retriever's. This is the property the prior bug
     (TypeError on `pool_rows[CandidateRow]`) prevented us from
     verifying — the warning-and-fallback path masked it in CI."""
-    from eval.scripts.run_retrieval_eval import _rerank_chunk_ids
-
     # Stub out the production reranker factory on BOTH sides — the
     # helper imports it lazily from `app.services.ai.rerankers` and
     # also calls it via the analyser module's reference, so we have
     # to patch both to avoid instantiating a real CrossEncoder.
     import app.services.ai.rerankers as rerankers_pkg
+    from eval.scripts.run_retrieval_eval import _rerank_chunk_ids
+
     monkeypatch.setattr(
-        rerankers_pkg, "_reranker_singleton", _ReverseReranker(),
+        rerankers_pkg,
+        "_reranker_singleton",
+        _ReverseReranker(),
     )
 
     row_a = _make_row(title="A", text="alpha")
@@ -104,8 +107,11 @@ def test_rerank_chunk_ids_falls_back_on_reranker_failure(monkeypatch):
             raise RuntimeError("simulated reranker crash")
 
     import app.services.ai.rerankers as rerankers_pkg
+
     monkeypatch.setattr(
-        rerankers_pkg, "_reranker_singleton", _BoomReranker(),
+        rerankers_pkg,
+        "_reranker_singleton",
+        _BoomReranker(),
     )
 
     row_a = _make_row(title="A", text="alpha")
@@ -131,11 +137,13 @@ def test_rerank_chunk_ids_falls_back_when_pool_lookup_misses(monkeypatch):
     """If any chunk in the pre-rerank pool is missing from the
     candidate lookup (e.g. stale corpus state), the helper must
     return the input slice rather than raise."""
+    import app.services.ai.rerankers as rerankers_pkg
     from eval.scripts.run_retrieval_eval import _rerank_chunk_ids
 
-    import app.services.ai.rerankers as rerankers_pkg
     monkeypatch.setattr(
-        rerankers_pkg, "_reranker_singleton", _ReverseReranker(),
+        rerankers_pkg,
+        "_reranker_singleton",
+        _ReverseReranker(),
     )
 
     row_a = _make_row(title="A", text="alpha")
@@ -161,15 +169,17 @@ def test_rerank_chunk_ids_falls_back_when_pool_lookup_misses(monkeypatch):
 def test_rerank_chunk_ids_handles_empty_input(monkeypatch):
     """Empty input is a valid early-return — the helper should not
     crash and should return []."""
-    from eval.scripts.run_retrieval_eval import _rerank_chunk_ids
-
     # The empty path still calls `get_default_reranker()` (the early
     # return on `pool_rows` only triggers when the pool is non-empty
     # and the lookup misses). Inject a stub so we don't need a real
     # CrossEncoder on disk.
     import app.services.ai.rerankers as rerankers_pkg
+    from eval.scripts.run_retrieval_eval import _rerank_chunk_ids
+
     monkeypatch.setattr(
-        rerankers_pkg, "_reranker_singleton", _ReverseReranker(),
+        rerankers_pkg,
+        "_reranker_singleton",
+        _ReverseReranker(),
     )
 
     result = _rerank_chunk_ids(

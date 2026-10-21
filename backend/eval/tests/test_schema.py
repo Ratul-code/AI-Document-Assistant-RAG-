@@ -11,7 +11,7 @@ These pin three invariants:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from uuid import UUID
 
 import pytest
@@ -25,7 +25,6 @@ from eval.schema import (
     RelevantChunkKey,
 )
 
-
 # Stable IDs so a failing test diff is easy to read.
 OWNER = UUID("00000000-0000-0000-0000-000000000001")
 DOC1 = UUID("00000000-0000-0000-0000-000000000010")
@@ -36,36 +35,36 @@ CHUNK3 = UUID("00000000-0000-0000-0000-000000000022")
 
 
 def _question(**overrides) -> Question:
-    base = dict(
-        id="doc2dial-0",
-        question="What is the application process?",
-        question_type="dialogue-turn",
-        scope_document_ids=[DOC1, DOC2],
-        relevant_chunk_keys=[
+    base = {
+        "id": "doc2dial-0",
+        "question": "What is the application process?",
+        "question_type": "dialogue-turn",
+        "scope_document_ids": [DOC1, DOC2],
+        "relevant_chunk_keys": [
             RelevantChunkKey(document_id=DOC1, chunk_index=0),
             RelevantChunkKey(document_id=DOC2, chunk_index=1),
         ],
-        relevant_passage_ids=["p0", "p1"],
-        gold_answer="The application requires...",
-    )
+        "relevant_passage_ids": ["p0", "p1"],
+        "gold_answer": "The application requires...",
+    }
     base.update(overrides)
     return Question(**base)
 
 
 def _dataset(**overrides) -> Doc2DialDataset:
-    base = dict(
-        name="doc2dial",
-        version="v1",
-        status="ready",
-        scope_mode="per_question",
-        passage_mapping="fuzzy_overlap_0.5",
-        questions=[_question()],
-        metrics_config=MetricsConfig(),
-        created_at=datetime(2026, 10, 3, 10, 0, 0, tzinfo=timezone.utc),
-        owner_id=OWNER,
-        source_doc_count=6,
-        question_type_counts={"dialogue-turn": 1},
-    )
+    base = {
+        "name": "doc2dial",
+        "version": "v1",
+        "status": "ready",
+        "scope_mode": "per_question",
+        "passage_mapping": "fuzzy_overlap_0.5",
+        "questions": [_question()],
+        "metrics_config": MetricsConfig(),
+        "created_at": datetime(2026, 10, 3, 10, 0, 0, tzinfo=UTC),
+        "owner_id": OWNER,
+        "source_doc_count": 6,
+        "question_type_counts": {"dialogue-turn": 1},
+    }
     base.update(overrides)
     return Doc2DialDataset(**base)
 
@@ -151,6 +150,7 @@ def test_dataset_is_frozen() -> None:
 def test_passage_mapping_entry_bounds() -> None:
     # overlap_ratio must be 0..1.
     from eval.schema import PassageMappingEntry
+
     with pytest.raises(ValidationError):
         PassageMappingEntry(
             passage_id="p0",

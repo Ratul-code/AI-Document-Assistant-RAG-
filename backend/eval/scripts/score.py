@@ -18,8 +18,8 @@ report builder reads the aggregated metrics.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
 from uuid import UUID
 
 

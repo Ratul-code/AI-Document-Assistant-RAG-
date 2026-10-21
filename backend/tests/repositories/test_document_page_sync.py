@@ -13,11 +13,10 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db.base import Base
 from app.models.document import Document, DocumentStatus
-from app.models.document_page import DocumentPage, OcrStatus
+from app.models.document_page import DocumentPage, OcrStatus, TextSource
 from app.models.user import User
 from app.repositories.document_page import replace_pages_for_document
 from app.services.document.parser._base import ParsedPage
-from app.models.document_page import TextSource
 
 
 def _make_page(num: int, text: str) -> ParsedPage:
@@ -73,26 +72,34 @@ def test_replace_pages_is_idempotent(sync_db_session, document_id: str) -> None:
     doc_uuid = uuid4()
     # First insert with 3 pages
     replace_pages_for_document(
-        sync_db_session, doc_uuid,
+        sync_db_session,
+        doc_uuid,
         [_make_page(1, "a" * 30), _make_page(2, "b" * 30), _make_page(3, "c" * 30)],
     )
     sync_db_session.commit()
-    rows = sync_db_session.execute(
-        select(DocumentPage).where(DocumentPage.document_id == doc_uuid)
-    ).scalars().all()
+    rows = (
+        sync_db_session.execute(select(DocumentPage).where(DocumentPage.document_id == doc_uuid))
+        .scalars()
+        .all()
+    )
     assert len(rows) == 3
 
     # Re-run with 2 pages — old 3 should be gone.
     replace_pages_for_document(
-        sync_db_session, doc_uuid,
+        sync_db_session,
+        doc_uuid,
         [_make_page(1, "x" * 30), _make_page(2, "y" * 30)],
     )
     sync_db_session.commit()
-    rows = sync_db_session.execute(
-        select(DocumentPage)
-        .where(DocumentPage.document_id == doc_uuid)
-        .order_by(DocumentPage.page_number)
-    ).scalars().all()
+    rows = (
+        sync_db_session.execute(
+            select(DocumentPage)
+            .where(DocumentPage.document_id == doc_uuid)
+            .order_by(DocumentPage.page_number)
+        )
+        .scalars()
+        .all()
+    )
     assert len(rows) == 2
     assert [r.page_number for r in rows] == [1, 2]
 
@@ -100,25 +107,27 @@ def test_replace_pages_is_idempotent(sync_db_session, document_id: str) -> None:
 def test_replace_pages_with_zero_pages_clears(sync_db_session, document_id: str) -> None:
     doc_uuid = uuid4()
     replace_pages_for_document(
-        sync_db_session, doc_uuid,
+        sync_db_session,
+        doc_uuid,
         [_make_page(1, "a" * 30), _make_page(2, "b" * 30)],
     )
     sync_db_session.commit()
     n = replace_pages_for_document(sync_db_session, doc_uuid, [])
     sync_db_session.commit()
     assert n == 0
-    rows = sync_db_session.execute(
-        select(DocumentPage).where(DocumentPage.document_id == doc_uuid)
-    ).scalars().all()
+    rows = (
+        sync_db_session.execute(select(DocumentPage).where(DocumentPage.document_id == doc_uuid))
+        .scalars()
+        .all()
+    )
     assert rows == []
 
 
-def test_pages_default_to_ocr_status_not_needed(
-    sync_db_session, document_id: str
-) -> None:
+def test_pages_default_to_ocr_status_not_needed(sync_db_session, document_id: str) -> None:
     doc_uuid = uuid4()
     replace_pages_for_document(
-        sync_db_session, doc_uuid,
+        sync_db_session,
+        doc_uuid,
         [_make_page(1, "hello world this is a long enough line")],
     )
     sync_db_session.commit()

@@ -15,10 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.document import DocumentStatus
 
-
 # ----------------------------------------------------------------------
 # Request: POST /api/v1/documents/upload-intent
 # ----------------------------------------------------------------------
+
 
 class UploadIntentRequest(BaseModel):
     """Body of the upload-intent request.
@@ -51,6 +51,7 @@ class UploadIntentRequest(BaseModel):
 # Response: POST /api/v1/documents/upload-intent
 # ----------------------------------------------------------------------
 
+
 class UploadIntentResponse(BaseModel):
     """What we return after creating the intent and signing the URL.
 
@@ -69,6 +70,7 @@ class UploadIntentResponse(BaseModel):
 # ----------------------------------------------------------------------
 # Response: POST /api/v1/documents/{id}/confirm
 # ----------------------------------------------------------------------
+
 
 class ConfirmUploadResponse(BaseModel):
     """What we return after resolving an upload (success OR failure).
@@ -93,6 +95,7 @@ class ConfirmUploadResponse(BaseModel):
 # Request: POST /api/v1/documents/{id}/upload-failed
 # ----------------------------------------------------------------------
 
+
 class UploadFailedRequest(BaseModel):
     """Body of the upload-failed report.
 
@@ -116,6 +119,7 @@ class UploadFailedRequest(BaseModel):
 # ----------------------------------------------------------------------
 # Response: GET /api/v1/documents
 # ----------------------------------------------------------------------
+
 
 class DocumentListItem(BaseModel):
     """One row in the document list.
@@ -165,6 +169,7 @@ class DocumentListResponse(BaseModel):
 # Request: PATCH /api/v1/documents/{id}
 # ----------------------------------------------------------------------
 
+
 class DocumentUpdate(BaseModel):
     """Body of `PATCH /api/v1/documents/{id}`.
 
@@ -187,6 +192,7 @@ class DocumentUpdate(BaseModel):
 # ----------------------------------------------------------------------
 # Response: GET /api/v1/documents/{id}/stats
 # ----------------------------------------------------------------------
+
 
 class DocumentStatsResponse(BaseModel):
     """Per-document aggregate counts surfaced by the detail dialog.

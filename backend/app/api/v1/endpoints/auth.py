@@ -17,21 +17,24 @@ and the browser sends the cookies automatically.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Cookie, HTTPException, Request, Response, status
 
 from app.api.dependencies import CurrentUserDep, DbDep
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
 from app.schemas.token import AuthResponse
-from app.schemas.user import UserCreate, UserRead, UserCredential
+from app.schemas.user import UserCreate, UserCredential, UserRead
 from app.services.auth.service import (
     AuthError,
     IssuedTokens,
     login,
-    logout as auth_logout,
-    refresh as auth_refresh,
     register_user,
+)
+from app.services.auth.service import (
+    logout as auth_logout,
+)
+from app.services.auth.service import (
+    refresh as auth_refresh,
 )
 
 router = APIRouter()
@@ -41,6 +44,7 @@ _ACCESS_COOKIE_NAME = _settings.access_cookie_name
 
 
 # --- Cookie helpers --------------------------------------------------------
+
 
 def _set_token_cookies(response: Response, issued: IssuedTokens) -> None:
     """Attach both tokens as HttpOnly cookies."""
@@ -85,6 +89,7 @@ def _auth_response(issued: IssuedTokens, user_id) -> AuthResponse:
 
 # --- Register --------------------------------------------------------------
 
+
 @router.post(
     "/register",
     response_model=UserRead,
@@ -107,13 +112,12 @@ async def register(
             password=payload.password,
         )
     except AuthError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=exc.detail
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail)
     return UserRead.model_validate(user)
 
 
 # --- Login -----------------------------------------------------------------
+
 
 @router.post("/login", response_model=AuthResponse, tags=["auth"])
 @limiter.limit("5/minute")
@@ -126,13 +130,9 @@ async def login_endpoint(
     print("payload")
     """Verify email/password; set BOTH tokens as HttpOnly cookies."""
     try:
-        user, issued = await login(
-            db, email=payload.email, password=payload.password
-        )
+        user, issued = await login(db, email=payload.email, password=payload.password)
     except AuthError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.detail
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.detail)
 
     _set_token_cookies(response, issued)
     return _auth_response(issued, user.id)
@@ -140,15 +140,14 @@ async def login_endpoint(
 
 # --- Refresh ---------------------------------------------------------------
 
+
 @router.post("/refresh", response_model=AuthResponse, tags=["auth"])
 @limiter.limit("30/minute")
 async def refresh_endpoint(
     request: Request,
     response: Response,
     db: DbDep,
-    refresh_token: Annotated[
-        str | None, Cookie(alias=_REFRESH_COOKIE_NAME)
-    ] = None,
+    refresh_token: Annotated[str | None, Cookie(alias=_REFRESH_COOKIE_NAME)] = None,
 ) -> AuthResponse:
     """Rotate the refresh token. Sets new access + refresh cookies AND returns
     the new tokens in the response body so non-browser clients (e.g. Next.js
@@ -162,9 +161,7 @@ async def refresh_endpoint(
         issued = await auth_refresh(db, raw_refresh_token=refresh_token)
     except AuthError as exc:
         _clear_token_cookies(response)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.detail
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.detail)
 
     _set_token_cookies(response, issued)
     return _auth_response(issued, issued.user_id)
@@ -172,15 +169,14 @@ async def refresh_endpoint(
 
 # --- Logout ----------------------------------------------------------------
 
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, tags=["auth"])
 @limiter.limit("10/minute")
 async def logout_endpoint(
     request: Request,
     response: Response,
     db: DbDep,
-    refresh_token: Annotated[
-        str | None, Cookie(alias=_REFRESH_COOKIE_NAME)
-    ] = None,
+    refresh_token: Annotated[str | None, Cookie(alias=_REFRESH_COOKIE_NAME)] = None,
 ) -> Response:
     """Revoke the refresh token and clear both cookies."""
     if refresh_token:
@@ -191,6 +187,7 @@ async def logout_endpoint(
 
 
 # --- Me (current user) -----------------------------------------------------
+
 
 @router.get("/me", response_model=UserRead, tags=["auth"])
 @limiter.limit("60/minute")
@@ -216,13 +213,12 @@ async def me(
 
 # --- Session check (lightweight) -------------------------------------------
 
+
 @router.get("/check", tags=["auth"])
 async def check(
     request: Request,
     response: Response,
-    access_token: Annotated[
-        str | None, Cookie(alias=_ACCESS_COOKIE_NAME)
-    ] = None,
+    access_token: Annotated[str | None, Cookie(alias=_ACCESS_COOKIE_NAME)] = None,
 ) -> dict:
     """Cheap "is the access-token cookie valid?" probe for the Next.js proxy.
 
@@ -253,6 +249,7 @@ async def check(
     """
     # Import here to avoid a circular import at module load time.
     import jwt as _jwt
+
     from app.core.security import decode_access_token
 
     if not access_token:

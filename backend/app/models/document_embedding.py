@@ -28,8 +28,8 @@ from sqlalchemy import (
     String,
     func,
 )
-from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import JSON
 
 from app.db.base import Base
 
@@ -70,9 +70,7 @@ class DocumentEmbedding(Base):
 
     # Worker-reported distance metric (e.g. "cosine"). May be NULL
     # until the first successful run.
-    distance_metric: Mapped[str | None] = mapped_column(
-        String(32), nullable=True
-    )
+    distance_metric: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     status: Mapped[EmbeddingStatus] = mapped_column(
         Enum(EmbeddingStatus, name="embedding_status"),
@@ -97,9 +95,7 @@ class DocumentEmbedding(Base):
         nullable=False,
     )
 
-    __table_args__ = (
-        Index("uq_document_embeddings_chunk", "chunk_id", unique=True),
-    )
+    __table_args__ = (Index("uq_document_embeddings_chunk", "chunk_id", unique=True),)
 
 
 __all__ = ["DocumentEmbedding", "EmbeddingStatus"]

@@ -26,8 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.repositories import document as document_repo
 
-
-
 # Per-user hard caps. These are not configurable yet (small project),
 # but kept as constants so they're easy to find and bump.
 _MAX_DOCUMENTS_PER_USER = 100
@@ -55,8 +53,7 @@ def validate_mime_type(mime_type: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=(
-                f"Unsupported file type: {mime_type!r}. "
-                f"Allowed types: {', '.join(allowed)}"
+                f"Unsupported file type: {mime_type!r}. " f"Allowed types: {', '.join(allowed)}"
             ),
         )
 
@@ -68,8 +65,7 @@ def validate_file_size(file_size_bytes: int) -> None:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=(
-                f"File too large: {file_size_bytes} bytes. "
-                f"Max allowed: {max_bytes} bytes."
+                f"File too large: {file_size_bytes} bytes. " f"Max allowed: {max_bytes} bytes."
             ),
         )
 

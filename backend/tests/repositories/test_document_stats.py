@@ -55,9 +55,7 @@ def session_factory():
             await conn.run_sync(Base.metadata.create_all)
 
     asyncio.run(_create())
-    factory = async_sessionmaker(
-        bind=engine, expire_on_commit=False, class_=AsyncSession
-    )
+    factory = async_sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)
     try:
         yield factory
     finally:
@@ -179,9 +177,7 @@ def test_empty_document_returns_zeros(session_factory):
         async with session_factory() as session:
             owner_id = await _seed_user(session, "empty@example.com")
             doc_id = await _seed_doc(session, owner_id)
-            return await stats_repo.document_stats_for(
-                session, doc_id, owner_id=owner_id
-            )
+            return await stats_repo.document_stats_for(session, doc_id, owner_id=owner_id)
 
     stats = _run(body())
     assert stats is not None
@@ -206,18 +202,14 @@ def test_happy_path_with_mixed_embedding_statuses(session_factory):
             owner_id = await _seed_user(session, "mixed@example.com")
             doc_id = await _seed_doc(session, owner_id)
             page1 = await _seed_page(session, doc_id, page_number=1)
-            page2 = await _seed_page(
-                session, doc_id, page_number=2, ocr_status=OcrStatus.pending
-            )
+            page2 = await _seed_page(session, doc_id, page_number=2, ocr_status=OcrStatus.pending)
             c1 = await _seed_chunk(session, page1, chunk_index=0)
             c2 = await _seed_chunk(session, page1, chunk_index=1)
             await _seed_embedding(session, c1, status=EmbeddingStatus.succeeded)
             await _seed_embedding(session, c2, status=EmbeddingStatus.succeeded)
             c3 = await _seed_chunk(session, page2, chunk_index=0)
             await _seed_embedding(session, c3, status=EmbeddingStatus.failed)
-            return await stats_repo.document_stats_for(
-                session, doc_id, owner_id=owner_id
-            )
+            return await stats_repo.document_stats_for(session, doc_id, owner_id=owner_id)
 
     stats = _run(body())
     assert stats is not None
@@ -247,9 +239,7 @@ def test_distinct_embedding_models_returned_sorted(session_factory):
             c2 = await _seed_chunk(session, page, chunk_index=1)
             await _seed_embedding(session, c1, model_name="z-model")
             await _seed_embedding(session, c2, model_name="a-model")
-            return await stats_repo.document_stats_for(
-                session, doc_id, owner_id=owner_id
-            )
+            return await stats_repo.document_stats_for(session, doc_id, owner_id=owner_id)
 
     stats = _run(body())
     assert stats is not None
@@ -266,24 +256,12 @@ def test_ocr_status_breakdown(session_factory):
         async with session_factory() as session:
             owner_id = await _seed_user(session, "ocr@example.com")
             doc_id = await _seed_doc(session, owner_id)
-            await _seed_page(
-                session, doc_id, page_number=1, ocr_status=OcrStatus.not_needed
-            )
-            await _seed_page(
-                session, doc_id, page_number=2, ocr_status=OcrStatus.pending
-            )
-            await _seed_page(
-                session, doc_id, page_number=3, ocr_status=OcrStatus.processing
-            )
-            await _seed_page(
-                session, doc_id, page_number=4, ocr_status=OcrStatus.failed
-            )
-            await _seed_page(
-                session, doc_id, page_number=5, ocr_status=OcrStatus.succeeded
-            )
-            return await stats_repo.document_stats_for(
-                session, doc_id, owner_id=owner_id
-            )
+            await _seed_page(session, doc_id, page_number=1, ocr_status=OcrStatus.not_needed)
+            await _seed_page(session, doc_id, page_number=2, ocr_status=OcrStatus.pending)
+            await _seed_page(session, doc_id, page_number=3, ocr_status=OcrStatus.processing)
+            await _seed_page(session, doc_id, page_number=4, ocr_status=OcrStatus.failed)
+            await _seed_page(session, doc_id, page_number=5, ocr_status=OcrStatus.succeeded)
+            return await stats_repo.document_stats_for(session, doc_id, owner_id=owner_id)
 
     stats = _run(body())
     assert stats is not None
@@ -302,9 +280,7 @@ def test_cross_owner_returns_none(session_factory):
             owner_a = await _seed_user(session, "a@example.com")
             owner_b = await _seed_user(session, "b@example.com")
             doc_id = await _seed_doc(session, owner_a)
-            return await stats_repo.document_stats_for(
-                session, doc_id, owner_id=owner_b
-            )
+            return await stats_repo.document_stats_for(session, doc_id, owner_id=owner_b)
 
     assert _run(body()) is None
 
@@ -315,9 +291,7 @@ def test_missing_doc_returns_none(session_factory):
     async def body():
         async with session_factory() as session:
             owner_id = await _seed_user(session, "missing@example.com")
-            return await stats_repo.document_stats_for(
-                session, uuid4(), owner_id=owner_id
-            )
+            return await stats_repo.document_stats_for(session, uuid4(), owner_id=owner_id)
 
     assert _run(body()) is None
 

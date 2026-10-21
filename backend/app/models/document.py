@@ -7,7 +7,7 @@ add DocumentSection, Chunk, and Table tables for structured storage.
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -31,10 +31,10 @@ class DocumentStatus(str, enum.Enum):
     """
 
     processing = "processing"  # upload to Supabase in progress
-    uploaded = "uploaded"      # file fully stored in Supabase, awaiting processing
-    learning = "learning"      # AI processing (Celery task running)
-    ready = "ready"            # ready for queries
-    failed = "failed"          # error; see error_message
+    uploaded = "uploaded"  # file fully stored in Supabase, awaiting processing
+    learning = "learning"  # AI processing (Celery task running)
+    ready = "ready"  # ready for queries
+    failed = "failed"  # error; see error_message
 
 
 class Document(Base):
@@ -107,22 +107,20 @@ class Document(Base):
     #
     # `uploaded_at` is stamped by the `confirm_upload` route with
     # `datetime.now(timezone.utc)` — already correct.
-    uploaded_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         server_default=func.now(),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
     )
 
     # Relationship (lazy-loaded; explicit so back-populates could be set on User)
-    owner: Mapped["User"] = relationship(back_populates="documents", lazy="raise")
+    owner: Mapped[User] = relationship(back_populates="documents", lazy="raise")

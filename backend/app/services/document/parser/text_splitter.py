@@ -71,7 +71,11 @@ def split_into_pages(text: str, *, parser_name: str) -> list[_Chunk]:
 
     logger.debug(
         "%s splitter: produced %d pages from %d chars (target=%d, hard=%d)",
-        parser_name, len(pages), len(text), _SOFT_TARGET_CHARS, _HARD_MAX_CHARS,
+        parser_name,
+        len(pages),
+        len(text),
+        _SOFT_TARGET_CHARS,
+        _HARD_MAX_CHARS,
     )
     return pages
 
@@ -79,11 +83,7 @@ def split_into_pages(text: str, *, parser_name: str) -> list[_Chunk]:
 def _split_paragraphs(text: str) -> list[str]:
     """Normalize whitespace and split on paragraph boundaries."""
     normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
-    return [
-        part.strip()
-        for part in re.split(r"\n{2,}", normalized)
-        if part and part.strip()
-    ]
+    return [part.strip() for part in re.split(r"\n{2,}", normalized) if part and part.strip()]
 
 
 def _split_oversized_paragraph(paragraph: str) -> list[str]:
@@ -96,14 +96,11 @@ def _split_oversized_paragraph(paragraph: str) -> list[str]:
     chunks: list[str] = []
     remaining = paragraph
     while len(remaining) > _HARD_MAX_CHARS:
-        window = remaining[: _HARD_MAX_CHARS]
+        window = remaining[:_HARD_MAX_CHARS]
         match = None
         for m in _SENTENCE_END.finditer(window):
             match = m
-        if match is not None:
-            cut = match.end()
-        else:
-            cut = _HARD_MAX_CHARS
+        cut = match.end() if match is not None else _HARD_MAX_CHARS
         chunks.append(remaining[:cut].strip())
         remaining = remaining[cut:].strip()
     if remaining:
@@ -111,9 +108,7 @@ def _split_oversized_paragraph(paragraph: str) -> list[str]:
     return [c for c in chunks if c]
 
 
-def _flush_buffer(
-    buffer: list[str], had_hard_break: bool
-) -> tuple[_Chunk | None, bool]:
+def _flush_buffer(buffer: list[str], had_hard_break: bool) -> tuple[_Chunk | None, bool]:
     """Join accumulated paragraphs and decide whether to keep the chunk."""
     if not buffer:
         return None, had_hard_break

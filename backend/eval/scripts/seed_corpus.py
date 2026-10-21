@@ -39,13 +39,20 @@ from pathlib import Path
 from uuid import UUID, uuid4, uuid5
 
 from eval.scripts.doc2dial_loader import (
-    cap_by_turns as doc2dial_cap_by_turns,
     cache_dir_for as doc2dial_cache_dir_for,
+)
+from eval.scripts.doc2dial_loader import (
+    cap_by_turns as doc2dial_cap_by_turns,
+)
+from eval.scripts.doc2dial_loader import (
     is_cached as doc2dial_is_cached,
-    load_documents as doc2dial_load_documents,
+)
+from eval.scripts.doc2dial_loader import (
     load_dialogue_turns as doc2dial_load_dialogue_turns,
 )
-
+from eval.scripts.doc2dial_loader import (
+    load_documents as doc2dial_load_documents,
+)
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]  # backend/eval/scripts/seed_corpus.py
 
@@ -150,9 +157,7 @@ def load_unique_documents_doc2dial(
 
     documents = doc2dial_load_documents(dataset)
     turns = doc2dial_load_dialogue_turns(dataset)
-    documents_kept, _turns_kept = doc2dial_cap_by_turns(
-        turns, documents, max_turns=max_turns
-    )
+    documents_kept, _turns_kept = doc2dial_cap_by_turns(turns, documents, max_turns=max_turns)
     # Each entry is (doc_id, {"title": ..., "doc_text": ..., ...});
     # we return the doc_text field so the rest of the pipeline
     # treats Doc2Dial docs as plain markdown bodies.
@@ -195,9 +200,7 @@ def seed_one_document(
     from app.tasks import embedding as embedding_task
 
     # 1. Write the doc to a temp .md file.
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".md", delete=False, encoding="utf-8"
-    ) as fh:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as fh:
         fh.write(doc_text)
         tmp_path = Path(fh.name)
 
@@ -209,9 +212,8 @@ def seed_one_document(
         # 3. Ensure the user exists (idempotent — INSERT OR IGNORE).
         #    No async session available here, so use sync SQL.
         from sqlalchemy import select
-        existing = db.execute(
-            select(User).where(User.id == owner_id)
-        ).scalar_one_or_none()
+
+        existing = db.execute(select(User).where(User.id == owner_id)).scalar_one_or_none()
         if existing is None:
             user = User(
                 id=owner_id,

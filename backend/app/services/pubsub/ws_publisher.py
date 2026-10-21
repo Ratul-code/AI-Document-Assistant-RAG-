@@ -83,10 +83,7 @@ def _get_live_workers(client: Redis) -> list[str]:
     now = time.monotonic()
 
     with _worker_list_lock:
-        if (
-            _worker_list_cache is not None
-            and (now - _worker_list_cache_at) < ttl
-        ):
+        if _worker_list_cache is not None and (now - _worker_list_cache_at) < ttl:
             return list(_worker_list_cache)
 
     # Fetch outside the lock — SMEMBERS is slow vs. the lock window.
@@ -94,8 +91,7 @@ def _get_live_workers(client: Redis) -> list[str]:
         members = client.smembers(settings.ws_worker_registry_key)
         ids = sorted(members) if members else []
     except Exception as exc:
-        logger.warning("ws publisher: SMEMBERS %s failed: %s",
-                       settings.ws_worker_registry_key, exc)
+        logger.warning("ws publisher: SMEMBERS %s failed: %s", settings.ws_worker_registry_key, exc)
         with _worker_list_lock:
             return list(_worker_list_cache) if _worker_list_cache is not None else []
 
@@ -150,7 +146,10 @@ def publish_event(user_id: UUID, envelope: dict[str, Any]) -> int:
             delivered = client.publish(channel, json.dumps(payload))
             logger.info(
                 "ws publish (v1) channel=%s user_id=%s type=%s delivered=%d",
-                channel, user_id, envelope_type, delivered,
+                channel,
+                user_id,
+                envelope_type,
+                delivered,
             )
             return int(delivered)
 
@@ -175,17 +174,22 @@ def publish_event(user_id: UUID, envelope: dict[str, Any]) -> int:
                 # One bad channel must not abort the rest of the fanout.
                 logger.warning(
                     "ws publish (b3) failed channel=%s worker_id=%s err=%s",
-                    channel, wid, exc,
+                    channel,
+                    wid,
+                    exc,
                 )
         logger.info(
             "ws publish (b3) workers=%d total_delivered=%d type=%s",
-            len(worker_ids), total_delivered, envelope_type,
+            len(worker_ids),
+            total_delivered,
+            envelope_type,
         )
         return total_delivered
     except Exception as exc:
         logger.warning(
             "ws publish failed (redis unreachable?) user_id=%s err=%s",
-            user_id, exc,
+            user_id,
+            exc,
         )
         return 0
 

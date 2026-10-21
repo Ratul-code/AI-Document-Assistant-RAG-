@@ -11,7 +11,6 @@ from uuid import UUID, uuid4
 
 from eval.scripts.mapping import build_passage_mapping, lcs_ratio
 
-
 C1 = UUID("00000000-0000-0000-0000-000000000001")
 C2 = UUID("00000000-0000-0000-0000-000000000002")
 C3 = UUID("00000000-0000-0000-0000-000000000003")
@@ -64,8 +63,8 @@ def test_lcs_ratio_whitespace_normalisation() -> None:
 def test_lcs_ratio_threshold_edge_inclusive() -> None:
     # Build a passage + chunk that hit exactly the 0.5 threshold.
     p = "the quick brown fox jumps"
-    # Find a chunk whose LCS length is half of |p|.
-    half = len(p) // 2  # 11 chars -> 5 for half of 22
+    # 11 chars -> 5 for half of 22 (unused, kept as a reference comment for the
+    # boundary computation below).
     c = "x" * 100 + "the qu" + "y" * 90  # "the qu" = 6 chars
     # Overlap is "the qu" = 6 chars; ratio = 6/22 ≈ 0.27 (not at boundary)
     ratio = lcs_ratio(p, c)

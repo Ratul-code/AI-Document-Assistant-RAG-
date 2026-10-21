@@ -66,9 +66,7 @@ def upsert_embedding(
         )
         # Return the row id by re-querying.
         return db.execute(
-            select(DocumentEmbedding.id).where(
-                DocumentEmbedding.chunk_id == spec.chunk_id
-            )
+            select(DocumentEmbedding.id).where(DocumentEmbedding.chunk_id == spec.chunk_id)
         ).scalar_one()
 
     db.execute(

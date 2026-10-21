@@ -63,12 +63,10 @@ Snippet trimming:
 from __future__ import annotations
 
 import re
-from typing import Sequence
-from uuid import UUID
+from collections.abc import Sequence
 
 from app.repositories.embedding_search import CandidateRow
 from app.services.ai.llm import LLMMessage
-
 
 SYSTEM_PROMPT = """\
 You are a thoughtful document-grounded assistant. Your job is to help \
@@ -211,14 +209,14 @@ def trim_snippet(text: str, *, max_chars: int) -> str:
         if usable < min_half * 2:
             # Budget too tight for head+tail; do a single head cut.
             head_end = _last_boundary(s, max_chars - marker_overhead)
-            head = s[: head_end].rstrip() if head_end > 0 else s[: max_chars - marker_overhead]
+            head = s[:head_end].rstrip() if head_end > 0 else s[: max_chars - marker_overhead]
             omitted = max(0, len(s) - len(head))
             return f"{head} […{omitted} chars omitted…]"
 
         head_budget = usable // 2
         tail_budget = usable - head_budget
         head_end = _last_boundary(s, head_budget)
-        head = s[: head_end].rstrip() if head_end > 0 else s[:head_budget]
+        head = s[:head_end].rstrip() if head_end > 0 else s[:head_budget]
         # Tail slice, then snap forward to the next boundary so we
         # never start the tail mid-word.
         tail_start = len(s) - tail_budget
@@ -230,11 +228,9 @@ def trim_snippet(text: str, *, max_chars: int) -> str:
             tail_start += first_ws + 1
             tail = s[tail_start:]
         tail_rel = _last_boundary(tail, len(tail))
-        tail = tail[: tail_rel].rstrip() if tail_rel > 0 else tail.rstrip()
+        tail = tail[:tail_rel].rstrip() if tail_rel > 0 else tail.rstrip()
         omitted = max(1, len(s) - len(head) - len(tail) - 4)
-        return (
-            f"{head}\n\n[…{omitted} chars omitted in middle…]\n\n{tail}"
-        ).rstrip()
+        return (f"{head}\n\n[…{omitted} chars omitted in middle…]\n\n{tail}").rstrip()
 
     # Plain single cut.
     cut = _last_boundary(s, max_chars - 1)

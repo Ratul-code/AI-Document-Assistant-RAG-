@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import inspect
 from uuid import uuid4
+
+from sqlalchemy import inspect
 
 from app.services.pubsub import ws_publisher
 from eval.scripts._db import (
@@ -34,11 +35,13 @@ def test_hermetic_session_commits_and_closes() -> None:
     engine = hermetic_engine()
     try:
         from app.models.user import User
+
         with hermetic_session(engine) as db:
             user = User(id=uuid4(), email="x@x", name="x", hashed_password="x" * 60)
             db.add(user)
         # After exit, a new session sees the row.
         from sqlalchemy.orm import sessionmaker
+
         SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
         with SessionLocal() as db:
             assert db.query(User).count() == 1
@@ -49,8 +52,10 @@ def test_hermetic_session_commits_and_closes() -> None:
 def test_hermetic_session_rolls_back_on_exception() -> None:
     engine = hermetic_engine()
     try:
-        from app.models.user import User
         from sqlalchemy.orm import sessionmaker
+
+        from app.models.user import User
+
         SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
         try:
             with hermetic_session(engine) as db:
@@ -101,6 +106,7 @@ def test_build_hermetic_env_yields_engine_and_factory() -> None:
         # The factory must produce a usable session.
         with SessionLocal() as db:
             from app.models.user import User
+
             db.add(User(id=uuid4(), email="h@h", name="h", hashed_password="x" * 60))
         # The pubsub patch is active inside the context.
         assert ws_publisher.publish_event is not _ORIGINAL_PUBLISH  # type: ignore[name-defined]
@@ -108,4 +114,6 @@ def test_build_hermetic_env_yields_engine_and_factory() -> None:
 
 # Module-level reference to the original for the test above to work
 # even when tests run out of order.
-_ORIGINAL_PUBLISH = None  # placeholder, real one restored in test_patch_pubsub_noop_replaces_publish_event
+_ORIGINAL_PUBLISH = (
+    None  # placeholder, real one restored in test_patch_pubsub_noop_replaces_publish_event
+)

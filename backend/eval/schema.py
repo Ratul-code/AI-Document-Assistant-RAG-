@@ -34,7 +34,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # --------------------------------------------------------------------------
 # Dataset (canonical, committable, read by the runner)
 # --------------------------------------------------------------------------

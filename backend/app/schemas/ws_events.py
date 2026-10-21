@@ -26,7 +26,7 @@ for the matching shape.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Annotated, Any
 from uuid import UUID
@@ -78,6 +78,7 @@ class WsEventType(str, Enum):
 # ---------------------------------------------------------------------
 # Discriminated payload models — one per WsEventType value
 # ---------------------------------------------------------------------
+
 
 class DocumentStatusEventData(BaseModel):
     """Payload for `document.status` events.
@@ -206,6 +207,7 @@ class AnalysisErrorEventData(BaseModel):
 # Envelope
 # ---------------------------------------------------------------------
 
+
 class WsEvent(BaseModel):
     """What the server pushes on the wire.
 
@@ -216,12 +218,13 @@ class WsEvent(BaseModel):
 
     type: WsEventType
     data: dict[str, Any]
-    ts: Annotated[datetime, Field(default_factory=lambda: datetime.now(timezone.utc))]
+    ts: Annotated[datetime, Field(default_factory=lambda: datetime.now(UTC))]
 
 
 # ---------------------------------------------------------------------
 # Builders — keep call sites short and type-safe
 # ---------------------------------------------------------------------
+
 
 def document_status_event(
     *,

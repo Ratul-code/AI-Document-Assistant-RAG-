@@ -139,9 +139,10 @@ def _mark_stage_failed(
         )
     except Exception:
         logger.warning(
-            "process_document: failed to write stage-failed-log event_type=%s "
-            "document_id=%s",
-            event_type, document_id, exc_info=True,
+            "process_document: failed to write stage-failed-log event_type=%s " "document_id=%s",
+            event_type,
+            document_id,
+            exc_info=True,
         )
 
 
@@ -175,9 +176,7 @@ def _mark_failed(db: Session, document_id: UUID, error_message: str) -> None:
 # ---------------------------------------------------------------------
 
 
-def _persist_pages(
-    db: Session, document_id: UUID, pages: list[ParsedPage]
-) -> int:
+def _persist_pages(db: Session, document_id: UUID, pages: list[ParsedPage]) -> int:
     """Bulk-replace all pages for the document. Returns row count."""
     return replace_pages_for_document(db, document_id, pages)
 
@@ -213,7 +212,9 @@ def _log_and_publish(
     except Exception:
         logger.warning(
             "process_document: add_log failed event_type=%s document_id=%s",
-            event_type, document_id, exc_info=True,
+            event_type,
+            document_id,
+            exc_info=True,
         )
         return None
 
@@ -224,7 +225,8 @@ def _log_and_publish(
         row = db.get(DocumentLog, log_id)
     except Exception:
         logger.warning(
-            "process_document: failed to refetch log row id=%s", log_id,
+            "process_document: failed to refetch log row id=%s",
+            log_id,
             exc_info=True,
         )
         return None
@@ -233,6 +235,7 @@ def _log_and_publish(
 
     try:
         from app.services.pubsub.ws_publisher import publish_document_log
+
         publish_document_log(
             owner_id,
             document_id=document_id,
@@ -241,7 +244,9 @@ def _log_and_publish(
     except Exception:
         logger.warning(
             "process_document: ws publish failed event_type=%s document_id=%s",
-            event_type, document_id, exc_info=True,
+            event_type,
+            document_id,
+            exc_info=True,
         )
 
     return row
@@ -261,6 +266,7 @@ def _log_one(
     work (download, parse, chunking terminal). Opens a fresh session
     via `run_in_sync_session`, writes + commits, then publishes.
     """
+
     def _do(db: Session) -> DocumentLog | None:
         return _log_and_publish(
             db,
@@ -276,7 +282,9 @@ def _log_one(
     except Exception:
         logger.warning(
             "process_document: _log_one failed event_type=%s document_id=%s",
-            event_type, document_id, exc_info=True,
+            event_type,
+            document_id,
+            exc_info=True,
         )
 
 
@@ -311,7 +319,9 @@ def _publish_progress(
     except Exception:
         logger.warning(
             "process_document: progress publish failed phase=%s document_id=%s",
-            phase, document_id, exc_info=True,
+            phase,
+            document_id,
+            exc_info=True,
         )
 
 
@@ -364,9 +374,7 @@ def _chunk_pages_for_document(db: Session, document_id: UUID, owner_id: UUID) ->
     return total
 
 
-def _delete_document(
-    db: Session, document_id: UUID
-) -> tuple[str, str, UUID, str] | None:
+def _delete_document(db: Session, document_id: UUID) -> tuple[str, str, UUID, str] | None:
     """Delete the row and return data needed after the commit.
 
     The CASCADE on `document_pages.document_id` removes child pages.
@@ -404,9 +412,7 @@ def _cleanup_storage(bucket: str, storage_path: str) -> None:
     try:
         get_supabase_storage().delete_file(bucket, storage_path)
     except Exception:
-        logger.exception(
-            "process_document: failed to delete storage %s/%s", bucket, storage_path
-        )
+        logger.exception("process_document: failed to delete storage %s/%s", bucket, storage_path)
 
 
 # ---------------------------------------------------------------------
@@ -448,7 +454,9 @@ def _download_to_tempfile(bucket: str, storage_path: str) -> tuple[Path, int]:
     byte_count = len(file_bytes)
     logger.info(
         "process_document: downloaded %d bytes bucket=%s path=%s",
-        byte_count, bucket, storage_path,
+        byte_count,
+        bucket,
+        storage_path,
     )
     suffix = Path(storage_path).suffix or ".bin"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -527,21 +535,18 @@ def process_document(self, document_id: str) -> dict:
         )
         try:
             try:
-                parsed = parse_document(
-                    tmp_path, document.mime_type, document.filename
-                )
+                parsed = parse_document(tmp_path, document.mime_type, document.filename)
             except EmptyDocumentError as exc:
                 logger.warning(
                     "process_document: empty/unsupported document_id=%s reason=%s",
-                    document_id, exc,
+                    document_id,
+                    exc,
                 )
                 error_message = str(exc)[:1000]
                 deleted = run_in_sync_session(_delete_document, doc_uuid)
                 if deleted is not None:
                     bucket, storage_path, owner_id, title = deleted
-                    _publish_failed_event(
-                        doc_uuid, owner_id, title, error_message
-                    )
+                    _publish_failed_event(doc_uuid, owner_id, title, error_message)
                     _cleanup_storage(bucket, storage_path)
                 return {
                     "ok": False,
@@ -553,7 +558,8 @@ def process_document(self, document_id: str) -> dict:
             # Persist pages first, then log + push the parse progress.
             run_in_sync_session(_persist_pages, doc_uuid, parsed)
             _log_one(
-                doc_uuid, document.owner_id,
+                doc_uuid,
+                document.owner_id,
                 event_type="parsing",
                 message=f"Parsed {len(parsed)} pages",
                 metadata={"pages": len(parsed)},
@@ -572,7 +578,8 @@ def process_document(self, document_id: str) -> dict:
             # Emit the terminal chunking event so the progress bar can
             # settle to 100% before embedding starts.
             _log_one(
-                doc_uuid, document.owner_id,
+                doc_uuid,
+                document.owner_id,
                 event_type="chunking",
                 message=f"Chunked into {chunks_total} chunks",
                 metadata={"chunks_total": chunks_total},
@@ -593,7 +600,9 @@ def process_document(self, document_id: str) -> dict:
             # FAILED) when it actually transitions the lifecycle.
             logger.info(
                 "process_document: stored %d pages / %d chunks document_id=%s",
-                len(parsed), chunks_total, document_id,
+                len(parsed),
+                chunks_total,
+                document_id,
             )
 
             # Hand off to the embedding worker. The doc is still in
@@ -630,9 +639,7 @@ def process_document(self, document_id: str) -> dict:
             try:
                 tmp_path.unlink()
             except OSError:
-                logger.warning(
-                    "process_document: failed to remove temp file %s", tmp_path
-                )
+                logger.warning("process_document: failed to remove temp file %s", tmp_path)
 
         return {
             "document_id": document_id,
@@ -663,14 +670,13 @@ def process_document(self, document_id: str) -> dict:
             if "document" in locals() and document is not None:
                 run_in_sync_session(
                     _mark_stage_failed,
-                    doc_uuid, document.owner_id,
+                    doc_uuid,
+                    document.owner_id,
                     event_type="processing_failed",
                     error_message=error_message,
                 )
             else:
-                run_in_sync_session(
-                    _mark_failed, doc_uuid, error_message
-                )
+                run_in_sync_session(_mark_failed, doc_uuid, error_message)
         except Exception:
             logger.exception(
                 "process_document: failed to mark document FAILED document_id=%s",

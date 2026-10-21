@@ -122,9 +122,10 @@ def tiny_txt_path(tmp_path: Path) -> Path:
 def long_md_path(tmp_path: Path) -> Path:
     """Markdown with multiple paragraphs summing to >5000 chars."""
     paragraphs = [
-        ("This is a long paragraph meant to push the splitter over the "
-        "five-thousand-character target so it has to actually split. "
-        * 5).strip()
+        (
+            "This is a long paragraph meant to push the splitter over the "
+            "five-thousand-character target so it has to actually split. " * 5
+        ).strip()
         for _ in range(20)
     ]
     path = tmp_path / "long.md"

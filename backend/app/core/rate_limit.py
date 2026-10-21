@@ -161,9 +161,7 @@ limiter: Limiter = Limiter(
 )
 
 
-def _rate_limit_exceeded_handler(
-    request: Request, exc: RateLimitExceeded
-) -> JSONResponse:
+def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     """Return a JSON 429 that matches the rest of the API's error shape.
 
     The default slowapi handler returns ``{"error": "..."}``; this

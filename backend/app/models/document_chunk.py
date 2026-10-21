@@ -25,8 +25,8 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import JSON
 
 from app.db.base import Base
 
@@ -65,9 +65,7 @@ class DocumentChunk(Base):
     # Set on every chunk by default; flipped to False once an embedding
     # row exists. Lets the embedding worker pull a fast worklist
     # without joining the embeddings table.
-    needs_embedding: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, index=True
-    )
+    needs_embedding: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
 
     # Optional linkage to the next chunk in the same page (for
     # overlap-aware retrieval). NULL for the last chunk in a page.
@@ -97,4 +95,3 @@ class DocumentChunk(Base):
 
 
 __all__ = ["DocumentChunk"]
-

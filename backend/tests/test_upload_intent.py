@@ -51,11 +51,13 @@ def _register_and_login() -> str:
 
 def _count_documents() -> int:
     """Synchronous helper: count rows in `documents` table."""
+
     async def _inner() -> int:
         engine = get_engine()
         async with engine.connect() as conn:
             result = await conn.execute(text("SELECT COUNT(*) FROM documents"))
             return int(result.scalar_one())
+
     return asyncio.run(_inner())
 
 
@@ -119,9 +121,7 @@ def test_upload_intent_503_rolls_back_db_row() -> None:
     assert "Storage backend" in body["detail"], body
 
     after = _count_documents()
-    assert after == baseline, (
-        f"DB row leaked after rollback: baseline={baseline} after={after}"
-    )
+    assert after == baseline, f"DB row leaked after rollback: baseline={baseline} after={after}"
 
 
 if __name__ == "__main__":

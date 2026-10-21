@@ -49,9 +49,7 @@ def _make_user(session, *, email: str) -> User:
     return user
 
 
-def _make_doc(
-    session, *, owner_id, status: DocumentStatus, title: str = "t"
-) -> Document:
+def _make_doc(session, *, owner_id, status: DocumentStatus, title: str = "t") -> Document:
     doc = Document(
         id=uuid4(),
         owner_id=owner_id,
@@ -83,9 +81,7 @@ def _make_page(session, *, document_id: int = 1, page_number: int = 1) -> Docume
     return p
 
 
-def _make_chunk(
-    session, *, page_id, index: int = 0, text: str = "text"
-) -> DocumentChunk:
+def _make_chunk(session, *, page_id, index: int = 0, text: str = "text") -> DocumentChunk:
     c = DocumentChunk(
         id=uuid4(),
         page_id=page_id,
@@ -169,9 +165,7 @@ def test_unrelated_owner_id_returns_empty(sync_db_session) -> None:
         (DocumentStatus.failed, True),
     ],
 )
-def test_only_ready_documents_are_queryable(
-    sync_db_session, doc_status, expect_empty
-) -> None:
+def test_only_ready_documents_are_queryable(sync_db_session, doc_status, expect_empty) -> None:
     user = _make_user(sync_db_session, email="x@example.com")
     doc = _make_doc(sync_db_session, owner_id=user.id, status=doc_status)
     page = _make_page(sync_db_session, document_id=doc.id)
@@ -193,9 +187,7 @@ def test_only_ready_documents_are_queryable(
         (EmbeddingStatus.succeeded, False),
     ],
 )
-def test_only_succeeded_embeddings_are_queryable(
-    sync_db_session, emb_status, expect_empty
-) -> None:
+def test_only_succeeded_embeddings_are_queryable(sync_db_session, emb_status, expect_empty) -> None:
     user = _make_user(sync_db_session, email="e@example.com")
     doc = _make_doc(sync_db_session, owner_id=user.id, status=DocumentStatus.ready)
     page = _make_page(sync_db_session, document_id=doc.id)
@@ -260,9 +252,7 @@ def test_document_ids_other_owner_returns_empty(sync_db_session) -> None:
 
 def test_candidate_row_includes_metadata_for_citations(sync_db_session) -> None:
     user = _make_user(sync_db_session, email="row@example.com")
-    doc = _make_doc(
-        sync_db_session, owner_id=user.id, status=DocumentStatus.ready, title="Alpha"
-    )
+    doc = _make_doc(sync_db_session, owner_id=user.id, status=DocumentStatus.ready, title="Alpha")
     page = _make_page(sync_db_session, document_id=doc.id, page_number=4)
     chunk = _make_chunk(sync_db_session, page_id=page.id, index=2, text="hello world")
     _make_embedding(

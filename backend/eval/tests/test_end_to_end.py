@@ -39,7 +39,6 @@ from eval.scripts.seed_corpus import (
     seed_one_document,
 )
 
-
 # --------------------------------------------------------------------------
 # Tiny fixture corpus — three short docs with enough overlap to be
 # distinguishable by a content-aware model (Qwen3) and completely
@@ -107,7 +106,7 @@ def _seed_persisted_with_manifest(
 ) -> dict[str, UUID]:
     """Seed DOC_A/B/C into a fresh persisted SQLite at `db_path`,
     then write a manifest next to it."""
-    from sqlalchemy.orm import sessionmaker, Session
+    from sqlalchemy.orm import Session, sessionmaker
 
     engine = persisted_engine(db_path)
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
@@ -141,6 +140,7 @@ def _stub_embedder():
 # --------------------------------------------------------------------------
 # Per-question scope (legacy path, kept for backward-compat coverage)
 # --------------------------------------------------------------------------
+
 
 def test_retrieve_with_stub_returns_all_scope_chunks() -> None:
     owner_id = get_or_create_owner_id()
@@ -191,6 +191,7 @@ def test_retrieve_owner_wide_returns_chunks_from_every_doc() -> None:
 # Scoring primitives (no DB)
 # --------------------------------------------------------------------------
 
+
 def test_score_question_aggregates_correctly() -> None:
     """Pure scoring logic with hand-crafted retrieval orderings."""
     qid = "test-q1"
@@ -237,6 +238,7 @@ def test_aggregate_across_questions() -> None:
 # matches the active embedder.
 # --------------------------------------------------------------------------
 
+
 def test_verify_corpus_ready_accepts_matching_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -261,9 +263,7 @@ def test_verify_corpus_ready_accepts_matching_manifest(
         "eval.scripts.run_retrieval_eval.cache_dir_for",
         lambda dataset: tmp_path,
     )
-    _seed_persisted_with_manifest(
-        db_path, owner_id, model_name=embedder.model_name
-    )
+    _seed_persisted_with_manifest(db_path, owner_id, model_name=embedder.model_name)
     # Manifest is at tmp_path/manifest.json — same dir as corpus.db.
     manifest = verify_corpus_ready("test_fixture", embedder.model_name)
     assert manifest["model_name"] == embedder.model_name

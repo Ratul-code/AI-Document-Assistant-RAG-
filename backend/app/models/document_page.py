@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,8 +37,8 @@ class TextSource(str, enum.Enum):
     reserved for when Google Vision integration lands.
     """
 
-    raw = "raw"        # parsed directly by pypdf / python-docx / read()
-    ocr = "ocr"        # produced by an OCR engine (no parser output)
+    raw = "raw"  # parsed directly by pypdf / python-docx / read()
+    ocr = "ocr"  # produced by an OCR engine (no parser output)
     merged = "merged"  # raw + ocr stitched together (mixed-content pages)
 
 

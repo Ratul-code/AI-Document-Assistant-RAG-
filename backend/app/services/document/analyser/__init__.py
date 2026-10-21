@@ -36,9 +36,10 @@ import asyncio
 import logging
 import math
 import time
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Sequence
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from app.core.config import get_settings
@@ -174,17 +175,12 @@ def rank_top_rows(
         return picked
 
     # No min_cosine gate. Order everything by score DESC, then secondary.
-    secondary_all = [
-        (str(r.document_id), r.page_number, r.chunk_index)
-        for r in candidates
-    ]
+    secondary_all = [(str(r.document_id), r.page_number, r.chunk_index) for r in candidates]
     order = sorted(
         range(len(candidates)),
         key=lambda i: (-float(scores[i]), secondary_all[i]),
     )
-    return [
-        (candidates[i], float(scores[i])) for i in order[:top_k]
-    ]
+    return [(candidates[i], float(scores[i])) for i in order[:top_k]]
 
 
 # ---------------------------------------------------------------------
@@ -239,6 +235,7 @@ def rank_top_rows_with_mode(
         # Lazy import — keeps the dep surface small for callers that
         # only ever use the dense path.
         from app.services.document.retrieval import hybrid_retrieve
+
         return hybrid_retrieve(
             candidates,
             query_vector,
@@ -250,9 +247,7 @@ def rank_top_rows_with_mode(
             min_cosine=min_cosine,
         )
 
-    raise ValueError(
-        f"Unknown retrieval mode {mode!r}; expected 'dense' or 'hybrid'."
-    )
+    raise ValueError(f"Unknown retrieval mode {mode!r}; expected 'dense' or 'hybrid'.")
 
 
 # ---------------------------------------------------------------------
@@ -317,7 +312,7 @@ def rerank_top_rows(
     if getattr(reranker, "name", "") == "none":
         sliced = list(ranked[:top_k])
         return RerankResult(
-            top_rows=[(row, score) for row, score in sliced],
+            top_rows=list(sliced),
             original_scores=None,
             provider=None,
         )
@@ -374,30 +369,31 @@ async def rerank_top_rows_async(
             ),
             timeout=timeout_s,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(
             "rerank_top_rows_async: timed out after %.2fs; "
             "falling back to pre-rerank order (pool=%d, top_k=%d).",
-            timeout_s, min(len(ranked), top_k * max(1, pool_multiplier)), top_k,
+            timeout_s,
+            min(len(ranked), top_k * max(1, pool_multiplier)),
+            top_k,
         )
         # Fallback: keep the retriever's ordering, drop everything
         # past `top_k`. `provider=None` so the citation payload says
         # "no rerank decided this order".
         sliced = list(ranked[:top_k])
         return RerankResult(
-            top_rows=[(row, score) for row, score in sliced],
+            top_rows=list(sliced),
             original_scores=None,
             provider=None,
         )
     except Exception as exc:  # noqa: BLE001 — defensive: rerank never fails the query
         logger.warning(
-            "rerank_top_rows_async: reranker raised %s; falling back to "
-            "pre-rerank order.",
+            "rerank_top_rows_async: reranker raised %s; falling back to " "pre-rerank order.",
             exc,
         )
         sliced = list(ranked[:top_k])
         return RerankResult(
-            top_rows=[(row, score) for row, score in sliced],
+            top_rows=list(sliced),
             original_scores=None,
             provider=None,
         )
@@ -435,16 +431,16 @@ def _build_citations(
     """
     citations: list[QueryCitation] = []
     for i, (row, score) in enumerate(top_rows, start=1):
-        kwargs: dict[str, Any] = dict(
-            index=i,
-            chunk_id=row.chunk_id,
-            document_id=row.document_id,
-            document_title=row.document_title,
-            page_number=row.page_number + 1 if row.page_number is not None else None,
-            section_path=list(row.section_path or []),
-            snippet=_snippet_for_response(row.text, snippet_chars_for_response),
-            score=score,
-        )
+        kwargs: dict[str, Any] = {
+            "index": i,
+            "chunk_id": row.chunk_id,
+            "document_id": row.document_id,
+            "document_title": row.document_title,
+            "page_number": row.page_number + 1 if row.page_number is not None else None,
+            "section_path": list(row.section_path or []),
+            "snippet": _snippet_for_response(row.text, snippet_chars_for_response),
+            "score": score,
+        }
         if (
             original_scores is not None
             and rerank_provider is not None
@@ -634,7 +630,7 @@ async def analyse_query(
                 rewrite_task,
                 timeout=settings.analysis_query_rewrite_timeout_s,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "analyse_query: query rewrite timed out after %.2fs; "
                 "falling back to raw question. conv_id=%s",
@@ -644,9 +640,9 @@ async def analyse_query(
             query_text = question
         except Exception as exc:  # noqa: BLE001 — defensive
             logger.warning(
-                "analyse_query: query rewrite raised %s; falling back. "
-                "conv_id=%s",
-                exc, conversation_id,
+                "analyse_query: query rewrite raised %s; falling back. " "conv_id=%s",
+                exc,
+                conversation_id,
             )
             query_text = question
     else:
@@ -715,7 +711,10 @@ async def analyse_query(
         latency_ms = (time.monotonic() - t0) * 1000.0
         logger.info(
             "analyse_query: rerank stream_id=%s provider=%s pool=%d kept=%d latency_ms=%.1f",
-            stream_id, rerank_result.provider, len(ranked), len(rerank_result.top_rows),
+            stream_id,
+            rerank_result.provider,
+            len(ranked),
+            len(rerank_result.top_rows),
             latency_ms,
         )
         top_rows = rerank_result.top_rows
@@ -762,7 +761,8 @@ async def analyse_query(
     except Exception as exc:
         logger.exception(
             "analyse_query: LLM provider failed stream_id=%s err=%s",
-            stream_id, exc,
+            stream_id,
+            exc,
         )
         yield AnalysisErrorEvent(
             code="PROVIDER_ERROR",
@@ -775,12 +775,8 @@ async def analyse_query(
     citations = _build_citations(
         top_rows,
         snippet_chars_for_response=settings.analysis_snippet_chars,
-        original_scores=(
-            rerank_result.original_scores if rerank_result is not None else None
-        ),
-        rerank_provider=(
-            rerank_result.provider if rerank_result is not None else None
-        ),
+        original_scores=(rerank_result.original_scores if rerank_result is not None else None),
+        rerank_provider=(rerank_result.provider if rerank_result is not None else None),
     )
     # `AnalysisDoneEvent.citations` is `list[dict] | None` — the WS
     # publisher needs JSON-serialisable payloads; `analyse_query_once`
@@ -806,7 +802,7 @@ async def analyse_query_once(
     rewrite_llm_provider: Any | None = None,
     embedding_model: Any | None = None,
     history: Sequence[LLMMessage] | None = None,
-) -> "QueryOutcome":
+) -> QueryOutcome:
     """Drain `analyse_query` and return either a `QueryResponse` or an
     `ErrorCode` constant. Cancellation is surfaced as `CANCELLED`.
 
@@ -843,9 +839,7 @@ async def analyse_query_once(
 
     if error_code is not None:
         return _ErrorOutcome(code=error_code, message="Analysis failed.")
-    return _QueryOutcome(
-        response=QueryResponse(answer="".join(answer_parts), citations=citations)
-    )
+    return _QueryOutcome(response=QueryResponse(answer="".join(answer_parts), citations=citations))
 
 
 async def analyse_query_with_conversation(
@@ -914,6 +908,7 @@ async def analyse_query_with_conversation(
             ``None`` or a fake session) don't break. New code should
             pass ``session_factory`` instead.
     """
+
     # Resolver that picks a fresh session per call when a factory is
     # available, otherwise falls back to the legacy single-session
     # path. ``None`` means "no DB available" (used by tests).
@@ -933,50 +928,24 @@ async def analyse_query_with_conversation(
     # closes without committing (SQLAlchemy 2.x defaults to
     # autobegin=False on a fresh session) and the inserts silently
     # vanish — which is exactly the bug that prompted this fix.
-    async with await _open_db() as db:
-        async with db.begin():
-            conv = await conversation_repo.get_conversation(
-                db, conversation_id, owner_id=owner_id
+    async with await _open_db() as db, db.begin():
+        conv = await conversation_repo.get_conversation(db, conversation_id, owner_id=owner_id)
+        if conv is None:
+            yield AnalysisErrorEvent(
+                code="UNAUTHORIZED",
+                message="Conversation not found.",
+                conversation_id=conversation_id,
             )
-            if conv is None:
-                yield AnalysisErrorEvent(
-                    code="UNAUTHORIZED",
-                    message="Conversation not found.",
-                    conversation_id=conversation_id,
-                )
-                return
+            return
 
-            effective_doc_ids = await _resolve_conversation_scope(
-                db, owner_id=owner_id, conv=conv, document_ids_override=document_ids
-            )
-            if not effective_doc_ids:
-                # Saved scope is empty AND caller didn't override. Persist
-                # the user turn so the question is visible, then yield
-                # NO_DOCUMENTS_READY so the UI can prompt the user to pick
-                # docs.
-                user_msg = await conversation_repo.insert_message(
-                    db,
-                    conversation_id=conversation_id,
-                    owner_id=owner_id,
-                    role=MessageRole.user,
-                    content=question,
-                )
-                if user_msg is not None:
-                    _publish_user_message(
-                        owner_id, stream_id, conversation_id, user_msg
-                    )
-                if conv.title is None:
-                    await _autotitle(db, conv, question)
-                yield AnalysisErrorEvent(
-                    code="NO_DOCUMENTS_READY",
-                    message=(
-                        "This conversation has no documents selected. "
-                        "Pick at least one or enable 'All documents'."
-                    ),
-                    conversation_id=conversation_id,
-                )
-                return
-
+        effective_doc_ids = await _resolve_conversation_scope(
+            db, owner_id=owner_id, conv=conv, document_ids_override=document_ids
+        )
+        if not effective_doc_ids:
+            # Saved scope is empty AND caller didn't override. Persist
+            # the user turn so the question is visible, then yield
+            # NO_DOCUMENTS_READY so the UI can prompt the user to pick
+            # docs.
             user_msg = await conversation_repo.insert_message(
                 db,
                 conversation_id=conversation_id,
@@ -985,11 +954,30 @@ async def analyse_query_with_conversation(
                 content=question,
             )
             if user_msg is not None:
-                _publish_user_message(
-                    owner_id, stream_id, conversation_id, user_msg
-                )
+                _publish_user_message(owner_id, stream_id, conversation_id, user_msg)
             if conv.title is None:
                 await _autotitle(db, conv, question)
+            yield AnalysisErrorEvent(
+                code="NO_DOCUMENTS_READY",
+                message=(
+                    "This conversation has no documents selected. "
+                    "Pick at least one or enable 'All documents'."
+                ),
+                conversation_id=conversation_id,
+            )
+            return
+
+        user_msg = await conversation_repo.insert_message(
+            db,
+            conversation_id=conversation_id,
+            owner_id=owner_id,
+            role=MessageRole.user,
+            content=question,
+        )
+        if user_msg is not None:
+            _publish_user_message(owner_id, stream_id, conversation_id, user_msg)
+        if conv.title is None:
+            await _autotitle(db, conv, question)
 
     # --- 3. Drive analyse_query and persist terminal events --------------
     # Note: each yield to the caller (which awaits WS publish, sleeps,
@@ -1062,7 +1050,8 @@ async def analyse_query_with_conversation(
         # shows the question, but no orphan fragment is persisted.
         logger.info(
             "analyse_query_with_conversation: cancelled conv_id=%s stream_id=%s",
-            conversation_id, stream_id,
+            conversation_id,
+            stream_id,
         )
         raise
 
@@ -1070,27 +1059,26 @@ async def analyse_query_with_conversation(
     if terminal_done is not None or terminal_error is not None:
         # Same commit-or-vanish fix as the pre-stream block: the session
         # must be inside a transaction or the inserts never reach the DB.
-        async with await _open_db() as db:
-            async with db.begin():
-                if terminal_done is not None:
-                    await conversation_repo.insert_message(
-                        db,
-                        conversation_id=conversation_id,
-                        owner_id=owner_id,
-                        role=MessageRole.assistant,
-                        content=terminal_done.answer,
-                        citations=list(terminal_done.citations or []),
-                    )
-                elif terminal_error is not None:
-                    await conversation_repo.insert_message(
-                        db,
-                        conversation_id=conversation_id,
-                        owner_id=owner_id,
-                        role=MessageRole.assistant,
-                        content="",  # error bubble is rendered from error_code, not text
-                        citations=None,
-                        error_code=terminal_error.code,
-                    )
+        async with await _open_db() as db, db.begin():
+            if terminal_done is not None:
+                await conversation_repo.insert_message(
+                    db,
+                    conversation_id=conversation_id,
+                    owner_id=owner_id,
+                    role=MessageRole.assistant,
+                    content=terminal_done.answer,
+                    citations=list(terminal_done.citations or []),
+                )
+            elif terminal_error is not None:
+                await conversation_repo.insert_message(
+                    db,
+                    conversation_id=conversation_id,
+                    owner_id=owner_id,
+                    role=MessageRole.assistant,
+                    content="",  # error bubble is rendered from error_code, not text
+                    citations=None,
+                    error_code=terminal_error.code,
+                )
 
 
 async def _resolve_conversation_scope(
@@ -1162,7 +1150,7 @@ class _NoOpCtx:
     a no-op).
     """
 
-    def begin(self) -> "_NoOpCtx":
+    def begin(self) -> _NoOpCtx:
         return self
 
     async def flush(self) -> None:
@@ -1177,7 +1165,7 @@ class _NoOpCtx:
     async def close(self) -> None:
         return None
 
-    async def __aenter__(self) -> "_NoOpCtx":
+    async def __aenter__(self) -> _NoOpCtx:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -1193,7 +1181,7 @@ async def _autotitle(db_async: Any, conv: Any, question: str) -> None:
     # `updated_at` may be unset on a freshly-created conv that hasn't
     # been refreshed yet; fall back to UTC.
     tz = getattr(conv.updated_at, "tzinfo", None)
-    now = datetime.now(tz=tz) if tz is not None else datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=tz) if tz is not None else datetime.now(tz=UTC)
     conv.updated_at = now
     if db_async is not None:
         await db_async.flush()
@@ -1233,7 +1221,7 @@ def _publish_user_message(
         "created_at": (
             msg.created_at.isoformat()
             if getattr(msg, "created_at", None) is not None
-            else datetime.now(timezone.utc).isoformat()
+            else datetime.now(UTC).isoformat()
         ),
     }
     publish_analysis_user_message(

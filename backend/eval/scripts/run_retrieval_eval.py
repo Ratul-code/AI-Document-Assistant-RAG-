@@ -36,34 +36,33 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import NoReturn
 from uuid import UUID
 
-from sqlalchemy import tuple_
+from sqlalchemy import select, tuple_
 
-from sqlalchemy import func, select
-
+from eval.schema import Doc2DialDataset
 from eval.scripts.ingest_corpus import (
-    cache_dir_for,
     read_manifest,
 )
 from eval.scripts.score import (
     AggregatedMetrics,
     PerQuestionResult,
     aggregate,
-    mrr as mrr_score,
     recall_at_k,
 )
-from eval.schema import Doc2DialDataset
-
+from eval.scripts.score import (
+    mrr as mrr_score,
+)
 
 # --------------------------------------------------------------------------
 # Pre-flight: corpus + model-mismatch refusal
 # --------------------------------------------------------------------------
 
 
-def _refuse(message: str) -> "NoReturn":
+def _refuse(message: str) -> NoReturn:
     print(f"REFUSE: {message}", file=sys.stderr)
     sys.exit(1)
 
@@ -111,7 +110,6 @@ def _resolve_relevant_keys_to_chunk_ids(
     """
     from app.models.document_chunk import DocumentChunk
     from app.models.document_page import DocumentPage
-    from sqlalchemy import select
 
     if not keys:
         return set()
@@ -120,9 +118,7 @@ def _resolve_relevant_keys_to_chunk_ids(
     rows = db.execute(
         select(DocumentChunk, DocumentPage)
         .join(DocumentPage, DocumentChunk.page_id == DocumentPage.id)
-        .where(
-            tuple_(DocumentPage.document_id, DocumentChunk.chunk_index).in_(pairs)
-        )
+        .where(tuple_(DocumentPage.document_id, DocumentChunk.chunk_index).in_(pairs))
     ).all()
     return {chunk.id for chunk, _page in rows}
 
@@ -194,8 +190,9 @@ def _rerank_chunk_ids(
     pool_rows = [candidate_lookup(cid) for cid in pool_ids]
     if any(r is None for r in pool_rows):
         return ranked_chunk_ids[:rerank_top_k]
-    from app.services.document.analyser import rerank_top_rows
     from app.services.ai.rerankers import get_default_reranker
+    from app.services.document.analyser import rerank_top_rows
+
     reranker = get_default_reranker()
     try:
         result = rerank_top_rows(
@@ -313,7 +310,7 @@ def _question_type_breakdown(
 ) -> dict[str, AggregatedMetrics]:
     """Aggregate per question_type so the report can stratify."""
     by_type: dict[str, list[PerQuestionResult]] = {}
-    for row, q in zip(per_question, dataset.questions):
+    for row, q in zip(per_question, dataset.questions, strict=False):
         by_type.setdefault(q.question_type, []).append(row)
     return {t: aggregate(rs) for t, rs in by_type.items()}
 
@@ -449,7 +446,7 @@ def render_report(
     if snippet_chars is not None:
         lines.append(f"| snippet_chars | `{snippet_chars}` |")
     if rerank_metrics is not None and rerank_provider is not None:
-        lines.append(f"| rerank.enabled | `true` |")
+        lines.append("| rerank.enabled | `true` |")
         lines.append(f"| rerank.provider | `{rerank_provider}` |")
         if rerank_model is not None:
             lines.append(f"| rerank.model | `{rerank_model}` |")
@@ -479,8 +476,7 @@ def render_report(
     if rerank_metrics is not None:
         lines.append("")
         lines.append(
-            f"- **With rerank** (`{rerank_provider}`): "
-            f"{_format_metrics(rerank_metrics)}"
+            f"- **With rerank** (`{rerank_provider}`): " f"{_format_metrics(rerank_metrics)}"
         )
         # Side-by-side delta — the portfolio number.
         d_r1 = rerank_metrics.recall_at_1 - metrics.recall_at_1
@@ -547,9 +543,7 @@ def render_report(
         lines.append("|---|---------|------|---------------|")
         for k in ("1", "5", "10"):
             rescued, lost, unchanged = deltas[k]
-            lines.append(
-                f"| @ {k} | {rescued} | {lost} | {unchanged} |"
-            )
+            lines.append(f"| @ {k} | {rescued} | {lost} | {unchanged} |")
         lines.append("")
 
     # --- Per question type ---------------------------------------------
@@ -686,7 +680,8 @@ def main(argv: list[str] | None = None) -> int:
     # Resolve rerank default from env if not set on the CLI.
     if args.rerank_enabled is None:
         args.rerank_enabled = os.environ.get(
-            "ANALYSIS_RERANK_ENABLED", "false",
+            "ANALYSIS_RERANK_ENABLED",
+            "false",
         ).lower() in ("1", "true", "yes")
 
     from app.core.config import get_settings
@@ -710,13 +705,12 @@ def main(argv: list[str] | None = None) -> int:
     if not db_path.exists():
         _refuse(f"Corpus DB not found at {db_path}. Re-run `ingest_corpus.py`.")
     engine = persisted_engine(db_path)
-    from sqlalchemy.orm import sessionmaker, Session
+    from sqlalchemy.orm import Session, sessionmaker
+
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
 
     # 3. Load dataset.json.
-    dataset_path = (
-        BACKEND_DIR / "eval" / "datasets" / args.dataset / "dataset.json"
-    )
+    dataset_path = BACKEND_DIR / "eval" / "datasets" / args.dataset / "dataset.json"
     if not dataset_path.exists():
         print(f"ERROR: {dataset_path} not found. Run `build_dataset.py` first.", file=sys.stderr)
         engine.dispose()
@@ -745,32 +739,33 @@ def main(argv: list[str] | None = None) -> int:
         f"top_k={top_k}, scope_mode={scope_mode}, retrieval_mode={args.retrieval_mode}, "
         f"min_cosine={min_cosine}, owner={owner_id}"
     )
-    print(f"Corpus: {manifest['doc_count']} docs, "
-          f"{manifest['chunk_count']} chunks (model={manifest['model_name']})")
+    print(
+        f"Corpus: {manifest['doc_count']} docs, "
+        f"{manifest['chunk_count']} chunks (model={manifest['model_name']})"
+    )
     print(f"Embedder: {embedder.model_name}, dim={embedder.dim}")
 
-    # Pre-build a BM25 index in `owner_wide` + `hybrid` mode: the
-    # candidate set is the same for every question, so we amortise
-    # the ~100 ms build cost across all questions. In
-    # `per_question` mode the candidate set varies per question, so
-    # the index is rebuilt inside the per-question call (and the
-    # `bm25_index` arg of `hybrid_retrieve` is left None).
-    shared_bm25_index = None
+    # Warm the corpus-wide candidate set in `owner_wide` + `hybrid` mode so the
+    # per-question timing reflects retrieval cost only, not candidate-fetch cost.
+    # The BM25 index itself is built per-question inside `hybrid_retrieve`.
     if args.retrieval_mode == "hybrid" and scope_mode == "owner_wide":
         from app.repositories.embedding_search import fetch_candidate_rows
-        from app.services.document.retrieval import build_bm25_index
+
         with SessionLocal() as db:
             all_candidates = fetch_candidate_rows(
-                db, owner_id=owner_id, document_ids=None,
+                db,
+                owner_id=owner_id,
+                document_ids=None,
             )
-        shared_bm25_index = build_bm25_index(all_candidates)
+        # Warm the corpus-wide candidate set so the per-question timing reflects
+        # the retrieval cost only, not the candidate-fetch cost.
         print(
-            f"Hybrid: pre-built BM25 index over {len(all_candidates)} "
+            f"Hybrid: pre-fetched {len(all_candidates)} "
             f"chunks (dense_k={args.hybrid_dense_k}, bm25_k={args.hybrid_bm25_k}, "
             f"rrf_k={args.hybrid_rrf_k})"
         )
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     per_question: list[PerQuestionResult] = []
     per_question_rerank: list[PerQuestionResult] = []
 
@@ -781,9 +776,12 @@ def main(argv: list[str] | None = None) -> int:
     rerank_lookup: dict = {}
     if args.rerank_enabled:
         from app.repositories.embedding_search import fetch_candidate_rows
+
         with SessionLocal() as db:
             all_candidates = fetch_candidate_rows(
-                db, owner_id=owner_id, document_ids=None,
+                db,
+                owner_id=owner_id,
+                document_ids=None,
             )
         rerank_lookup = {c.chunk_id: c for c in all_candidates}
         # Reset the reranker singleton so its config picks up any
@@ -792,6 +790,7 @@ def main(argv: list[str] | None = None) -> int:
             get_default_reranker,
             reset_reranker_singleton,
         )
+
         reset_reranker_singleton()
         # Print which reranker we're using so the report log is
         # self-explanatory.
@@ -808,9 +807,7 @@ def main(argv: list[str] | None = None) -> int:
             with SessionLocal() as db:
                 # Resolve the stable (doc_id, chunk_index) gold keys to
                 # the chunk UUIDs the retriever actually produces.
-                relevant_ids = _resolve_relevant_keys_to_chunk_ids(
-                    db, keys=q.relevant_chunk_keys
-                )
+                relevant_ids = _resolve_relevant_keys_to_chunk_ids(db, keys=q.relevant_chunk_keys)
                 if args.retrieval_mode == "hybrid":
                     retrieved = _hybrid_retrieve_for_question(
                         db,
@@ -845,33 +842,34 @@ def main(argv: list[str] | None = None) -> int:
 
             # Optional rerank column.
             if args.rerank_enabled and retrieved:
-                    # Retrieve the setter settings the reranker needs.
-                    from app.core.config import get_settings as _gs
-                    settings = _gs()
-                    # --rerank-top-k overrides the env value for this
-                    # eval run only. Lets the user dial R@K reporting
-                    # independently of the production setting.
-                    eval_rerank_top_k = (
-                        args.rerank_top_k
-                        if args.rerank_top_k is not None
-                        else settings.analysis_rerank_top_k
-                    )
-                    reranked = _rerank_chunk_ids(
-                        ranked_chunk_ids=retrieved,
-                        question=q.question,
-                        rerank_top_k=eval_rerank_top_k,
-                        pool_multiplier=settings.analysis_rerank_pool_multiplier,
-                        timeout_s=settings.analysis_rerank_timeout_s,
-                        candidate_lookup=rerank_lookup.get,
-                    )
-                    rerank_row = score_question(
-                        question_id=q.id,
-                        retrieved_ids=reranked,
-                        relevant_ids=list(relevant_ids),
-                        top_k=eval_rerank_top_k,
-                        secondary_top_ks=secondary_top_ks,
-                    )
-                    per_question_rerank.append(rerank_row)
+                # Retrieve the setter settings the reranker needs.
+                from app.core.config import get_settings as _gs
+
+                settings = _gs()
+                # --rerank-top-k overrides the env value for this
+                # eval run only. Lets the user dial R@K reporting
+                # independently of the production setting.
+                eval_rerank_top_k = (
+                    args.rerank_top_k
+                    if args.rerank_top_k is not None
+                    else settings.analysis_rerank_top_k
+                )
+                reranked = _rerank_chunk_ids(
+                    ranked_chunk_ids=retrieved,
+                    question=q.question,
+                    rerank_top_k=eval_rerank_top_k,
+                    pool_multiplier=settings.analysis_rerank_pool_multiplier,
+                    timeout_s=settings.analysis_rerank_timeout_s,
+                    candidate_lookup=rerank_lookup.get,
+                )
+                rerank_row = score_question(
+                    question_id=q.id,
+                    retrieved_ids=reranked,
+                    relevant_ids=list(relevant_ids),
+                    top_k=eval_rerank_top_k,
+                    secondary_top_ks=secondary_top_ks,
+                )
+                per_question_rerank.append(rerank_row)
 
             if idx % 100 == 0:
                 # Progress line — only average over rows that have gold
@@ -879,13 +877,11 @@ def main(argv: list[str] | None = None) -> int:
                 # mapping failures.
                 so_far_scored = [r for r in per_question if r.relevant_ids]
                 agg = aggregate(so_far_scored) if so_far_scored else aggregate(per_question)
-                print(
-                    f"  [{idx}/{len(questions)}] {_format_metrics(agg)}"
-                )
+                print(f"  [{idx}/{len(questions)}] {_format_metrics(agg)}")
     finally:
         engine.dispose()
 
-    finished_at = datetime.now(timezone.utc)
+    finished_at = datetime.now(UTC)
 
     # Question-first metric. We split the row set into rows that had
     # non-empty gold (scored_rows) and rows with no gold keys
@@ -934,6 +930,7 @@ def main(argv: list[str] | None = None) -> int:
             questions_scored=len(scored_rerank),
         )
         from app.services.ai.rerankers import get_default_reranker
+
         rerank_provider = get_default_reranker().name
         post_misses = _miss_counts(scored_rerank)
         deltas = _rerank_deltas(per_question, per_question_rerank)
@@ -981,7 +978,10 @@ def main(argv: list[str] | None = None) -> int:
     mode_slug = args.retrieval_mode
     suffix = args.output_suffix or finished_at.strftime("%Y%m%dT%H%M%S")
     results_path = (
-        BACKEND_DIR / "eval" / "results" / f"{args.dataset}_{embedder_slug}_{scope_slug}_{mode_slug}_{suffix}.json"
+        BACKEND_DIR
+        / "eval"
+        / "results"
+        / f"{args.dataset}_{embedder_slug}_{scope_slug}_{mode_slug}_{suffix}.json"
     )
     results_path.parent.mkdir(parents=True, exist_ok=True)
     results_path.write_text(
@@ -1016,9 +1016,7 @@ def main(argv: list[str] | None = None) -> int:
                     "mrr": metrics.mrr,
                     "questions_total": metrics.questions_total,
                     "questions_scored": metrics.questions_scored,
-                    "empty_gold_skipped": (
-                        metrics.questions_total - metrics.questions_scored
-                    ),
+                    "empty_gold_skipped": (metrics.questions_total - metrics.questions_scored),
                 },
                 "rerank": (
                     {
@@ -1037,16 +1035,11 @@ def main(argv: list[str] | None = None) -> int:
                             "questions_total": rerank_metrics.questions_total,
                             "questions_scored": rerank_metrics.questions_scored,
                             "empty_gold_skipped": (
-                                rerank_metrics.questions_total
-                                - rerank_metrics.questions_scored
+                                rerank_metrics.questions_total - rerank_metrics.questions_scored
                             ),
                             "delta": {
-                                "recall_at_1": (
-                                    rerank_metrics.recall_at_1 - metrics.recall_at_1
-                                ),
-                                "recall_at_5": (
-                                    rerank_metrics.recall_at_5 - metrics.recall_at_5
-                                ),
+                                "recall_at_1": (rerank_metrics.recall_at_1 - metrics.recall_at_1),
+                                "recall_at_5": (rerank_metrics.recall_at_5 - metrics.recall_at_5),
                                 "recall_at_10": (
                                     rerank_metrics.recall_at_10 - metrics.recall_at_10
                                 ),
@@ -1099,15 +1092,15 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     report_path = (
-        BACKEND_DIR / "eval" / "reports" / f"{args.dataset}_{embedder_slug}_{scope_slug}_{mode_slug}_{suffix}.md"
+        BACKEND_DIR
+        / "eval"
+        / "reports"
+        / f"{args.dataset}_{embedder_slug}_{scope_slug}_{mode_slug}_{suffix}.md"
     )
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(report_md)
 
-    print(
-        f"\nWrote {results_path} and {report_path}\n"
-        f"Overall: {_format_metrics(metrics)}"
-    )
+    print(f"\nWrote {results_path} and {report_path}\n" f"Overall: {_format_metrics(metrics)}")
     if rerank_metrics is not None and rerank_provider is not None:
         # Print the rerank column + delta so the rerank effect is
         # visible on stdout — otherwise the only signal is buried
@@ -1116,10 +1109,7 @@ def main(argv: list[str] | None = None) -> int:
         d_r5 = rerank_metrics.recall_at_5 - metrics.recall_at_5
         d_r10 = rerank_metrics.recall_at_10 - metrics.recall_at_10
         d_mrr = rerank_metrics.mrr - metrics.mrr
-        print(
-            f"With rerank ({rerank_provider}): "
-            f"{_format_metrics(rerank_metrics)}"
-        )
+        print(f"With rerank ({rerank_provider}): " f"{_format_metrics(rerank_metrics)}")
         print(
             f"Delta (rerank − retriever): "
             f"R@1 {d_r1:+.3f}  ·  R@5 {d_r5:+.3f}  ·  "

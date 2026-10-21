@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
-
 AnalysisEventKind = Literal["token", "done", "error"]
 
 

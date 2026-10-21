@@ -42,7 +42,7 @@ without touching this module.
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from collections.abc import Sequence
 
 from app.services.ai.llm import LLMMessage, LLMProvider
 
@@ -132,7 +132,7 @@ def _clean(text: str) -> str:
         "the rewritten query:",
     ):
         if lower.startswith(prefix):
-            s = s[len(prefix):].lstrip()
+            s = s[len(prefix) :].lstrip()
             break
     return s.strip()
 

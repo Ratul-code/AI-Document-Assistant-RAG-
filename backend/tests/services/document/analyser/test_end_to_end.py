@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import AsyncIterator
 from uuid import UUID, uuid4
 
 import pytest
@@ -38,7 +38,6 @@ from app.services.document.analyser import (  # noqa: E402
     analyse_query_once,
 )
 from app.services.document.analyser.events import AnalysisEvent  # noqa: E402
-
 
 # ---------------------------------------------------------------------
 # Fakes
@@ -162,7 +161,8 @@ async def test_no_candidates_yields_no_documents_ready(monkeypatch) -> None:
     _set_candidates(monkeypatch, [])
     _set_list_ready(monkeypatch, [])
     monkeypatch.setattr(
-        sync_mod, "run_in_sync_session",
+        sync_mod,
+        "run_in_sync_session",
         lambda fn, *a, **kw: fn(None, *a, **kw),
     )
 
@@ -207,7 +207,8 @@ async def test_dim_mismatch_yields_provider_mismatch(monkeypatch) -> None:
     # rather than short-circuiting with NO_DOCUMENTS_READY.
     _set_list_ready(monkeypatch, [row.document_id])
     monkeypatch.setattr(
-        sync_mod, "run_in_sync_session",
+        sync_mod,
+        "run_in_sync_session",
         lambda fn, *a, **kw: fn(None, *a, **kw),
     )
 
@@ -246,7 +247,8 @@ async def test_happy_path_yields_tokens_then_done(monkeypatch) -> None:
     _set_candidates(monkeypatch, rows)
     _set_list_ready(monkeypatch, [fake_doc_id])
     monkeypatch.setattr(
-        sync_mod, "run_in_sync_session",
+        sync_mod,
+        "run_in_sync_session",
         lambda fn, *a, **kw: fn(None, *a, **kw),
     )
 
@@ -291,7 +293,8 @@ async def test_analyse_query_once_returns_query_response_on_success(monkeypatch)
     _set_candidates(monkeypatch, rows)
     _set_list_ready(monkeypatch, [uuid4()])
     monkeypatch.setattr(
-        sync_mod, "run_in_sync_session",
+        sync_mod,
+        "run_in_sync_session",
         lambda fn, *a, **kw: fn(None, *a, **kw),
     )
 
@@ -321,7 +324,8 @@ async def test_analyse_query_once_returns_error_on_failure(monkeypatch) -> None:
     _set_candidates(monkeypatch, [])
     _set_list_ready(monkeypatch, [])
     monkeypatch.setattr(
-        sync_mod, "run_in_sync_session",
+        sync_mod,
+        "run_in_sync_session",
         lambda fn, *a, **kw: fn(None, *a, **kw),
     )
 

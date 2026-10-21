@@ -4,7 +4,7 @@ import json
 import os
 import socket
 from functools import lru_cache
-from typing import Annotated, Literal, Optional
+from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: Optional[str] = Field(
+    database_url: str | None = Field(
         default=None,
         description=(
             "Primary DB URL. If empty, DATABASE_URL_FALLBACK is used. "
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # Sync URL for Alembic. You may keep the same as async by
     # using psycopg (sync): postgresql+psycopg://...
-    database_url_sync: Optional[str] = None
+    database_url_sync: str | None = None
 
     # --- Auth / JWT ---
     # Used to sign access tokens. In production, generate a long random secret.
@@ -83,15 +83,13 @@ class Settings(BaseSettings):
         description="Name of the access-token cookie.",
     )
 
-
-    celery_broker_url:str = Field(
-        default="redis://localhost:6379/0",
-        description = "Celery broker URL (Redis)."
+    celery_broker_url: str = Field(
+        default="redis://localhost:6379/0", description="Celery broker URL (Redis)."
     )
     celery_result_backend: str = Field(
-      default="redis://localhost:6379/0",
-      description="Celery result backend URL.",
-  )
+        default="redis://localhost:6379/0",
+        description="Celery result backend URL.",
+    )
 
     # --- WebSocket pub/sub ---
     # Redis URL used for the WS event bus. Separate DB from Celery so
@@ -103,8 +101,8 @@ class Settings(BaseSettings):
     ws_pubsub_channel: str = Field(
         default="ws:events",
         description="Single global channel the worker PUBLISHes to and "
-                    "every FastAPI instance SUBSCRIBEs to. Used as the "
-                    "fallback channel when ws_b3_enabled is False.",
+        "every FastAPI instance SUBSCRIBEs to. Used as the "
+        "fallback channel when ws_b3_enabled is False.",
     )
     # --- B3 multi-worker WebSocket settings ---
     # Per-FastAPI-process identifier. Defaults to "<hostname>-<pid>" so
@@ -150,7 +148,7 @@ class Settings(BaseSettings):
     # to JSON-decode the env value (that auto-decoding happens before our
     # validator and breaks comma-separated lists). We expose the parsed
     # list via the `*_parsed` properties below.
-    cors_origins: Optional[str] = Field(
+    cors_origins: str | None = Field(
         default="http://localhost:3000,http://127.0.0.1:3000",
         description="Allowed origins (comma-separated or JSON array).",
     )
@@ -158,11 +156,11 @@ class Settings(BaseSettings):
         default=True,
         description="Whether to allow credentials (cookies, Authorization) cross-origin.",
     )
-    cors_allow_methods: Optional[str] = Field(
+    cors_allow_methods: str | None = Field(
         default="*",
         description="Allowed HTTP methods (comma-separated, JSON array, or '*').",
     )
-    cors_allow_headers: Optional[str] = Field(
+    cors_allow_headers: str | None = Field(
         default="*",
         description="Allowed request headers (comma-separated, JSON array, or '*').",
     )
@@ -170,11 +168,11 @@ class Settings(BaseSettings):
     # --- Supabase Storage ---
     # Used to generate presigned upload URLs and store user-uploaded documents.
     # The service-role key is SECRET: never expose it to the client.
-    supabase_url: Optional[str] = Field(
+    supabase_url: str | None = Field(
         default=None,
         description="Supabase project URL, e.g. https://abc.supabase.co",
     )
-    supabase_service_role_key: Optional[str] = Field(
+    supabase_service_role_key: str | None = Field(
         default=None,
         description="Supabase service-role key (server-only, never sent to clients).",
     )
@@ -206,14 +204,14 @@ class Settings(BaseSettings):
     embedding_dim: int = Field(
         default=1024,
         description="Output vector size. Must match the loaded model "
-                    "(Qwen3-Embedding-0.6B = 1024).",
+        "(Qwen3-Embedding-0.6B = 1024).",
     )
 
     upload_max_size_bytes: int = Field(
         default=50 * 1024 * 1024,  # 50 MB
         description="Maximum allowed file size for uploads (bytes).",
     )
-    upload_allowed_mime_types: Optional[str] = Field(
+    upload_allowed_mime_types: str | None = Field(
         default=(
             "application/pdf,"
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
@@ -348,7 +346,7 @@ class Settings(BaseSettings):
         description=(
             'Reranker provider. "none" is the identity no-op (always '
             'returns the pre-rerank order). "cross_encoder" uses a '
-            'sentence-transformers CrossEncoder.'
+            "sentence-transformers CrossEncoder."
         ),
     )
     analysis_rerank_model: str = Field(
@@ -446,14 +444,14 @@ class Settings(BaseSettings):
     # headers so they can show your app on their leaderboard / rate-limit
     # you fairly. Both default to empty, which is fine for plain
     # OpenAI. Set them in .env when pointing at OpenRouter.
-    analysis_llm_http_referer: Optional[str] = Field(
+    analysis_llm_http_referer: str | None = Field(
         default=None,
         description=(
             "Value sent as the `HTTP-Referer` header on each LLM call. "
             "OpenRouter uses this to attribute traffic to your app."
         ),
     )
-    analysis_llm_x_title: Optional[str] = Field(
+    analysis_llm_x_title: str | None = Field(
         default=None,
         description=(
             "Value sent as the `X-Title` header on each LLM call. "
@@ -599,7 +597,7 @@ class Settings(BaseSettings):
             "os.environ and is never stored on Settings."
         ),
     )
-    analysis_query_rewrite_http_referer: Optional[str] = Field(
+    analysis_query_rewrite_http_referer: str | None = Field(
         default=None,
         description=(
             "HTTP-Referer header for the rewrite LLM call. Set to "
@@ -607,11 +605,10 @@ class Settings(BaseSettings):
             "leaderboard."
         ),
     )
-    analysis_query_rewrite_x_title: Optional[str] = Field(
+    analysis_query_rewrite_x_title: str | None = Field(
         default=None,
         description=(
-            "X-Title header for the rewrite LLM call. Shown on "
-            "the OpenRouter dashboard."
+            "X-Title header for the rewrite LLM call. Shown on " "the OpenRouter dashboard."
         ),
     )
     # NOTE: Supabase's create_signed_upload_url hardcodes a 2-hour
@@ -687,7 +684,7 @@ class Settings(BaseSettings):
         return v
 
     @staticmethod
-    def _to_list(v: Optional[str]) -> list[str]:
+    def _to_list(v: str | None) -> list[str]:
         """Parse an env var into a list.
 
         Accepts:
@@ -750,7 +747,7 @@ def get_settings() -> Settings:
     return Settings()
 
 
-def get_llm_api_key() -> Optional[str]:
+def get_llm_api_key() -> str | None:
     """Read the LLM API key from os.environ on demand.
 
     Stored outside the pydantic Settings object on purpose: keys must

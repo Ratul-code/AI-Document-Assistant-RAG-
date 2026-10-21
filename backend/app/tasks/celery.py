@@ -9,7 +9,9 @@ functions register on the configured Celery app.
 """
 
 from app.core.celery_app import celery_app
-from app.tasks import document  # noqa: F401  -- ensures @shared_task registration
-from app.tasks import embedding  # noqa: F401  -- registers embed_chunks_for_document
+from app.tasks import (
+    document,  # noqa: F401  -- ensures @shared_task registration
+    embedding,  # noqa: F401  -- registers embed_chunks_for_document
+)
 
 __all__ = ("celery_app",)

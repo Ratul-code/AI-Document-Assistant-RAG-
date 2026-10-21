@@ -88,9 +88,7 @@ class WsSubscriber:
         """
         settings = get_settings()
         if settings.ws_b3_enabled:
-            return settings.ws_pubsub_channel_pattern.format(
-                worker_id=settings.worker_id
-            )
+            return settings.ws_pubsub_channel_pattern.format(worker_id=settings.worker_id)
         return settings.ws_pubsub_channel
 
     async def start(self) -> None:
@@ -116,7 +114,7 @@ class WsSubscriber:
         if self._task is not None:
             try:
                 await asyncio.wait_for(self._task, timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._task.cancel()
                 logger.warning("ws subscriber: cancelled after 5s timeout")
             except Exception:
@@ -152,7 +150,8 @@ class WsSubscriber:
             except RedisConnectionError as exc:
                 logger.warning(
                     "ws subscriber: redis connection error (%s); retrying in %.1fs",
-                    exc, backoff,
+                    exc,
+                    backoff,
                 )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, max_backoff)
@@ -161,7 +160,8 @@ class WsSubscriber:
             except Exception as exc:
                 logger.exception(
                     "ws subscriber: unexpected error (%s); retrying in %.1fs",
-                    exc, backoff,
+                    exc,
+                    backoff,
                 )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, max_backoff)
@@ -191,12 +191,14 @@ class WsSubscriber:
             delivered = await get_connection_manager().broadcast(event)
         except Exception:
             logger.exception(
-                "ws subscriber: broadcast failed type=%s", event_type,
+                "ws subscriber: broadcast failed type=%s",
+                event_type,
             )
             return
         logger.info(
             "ws subscriber: delivered type=%s sockets=%d",
-            event_type, delivered,
+            event_type,
+            delivered,
         )
 
 

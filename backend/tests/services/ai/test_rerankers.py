@@ -25,7 +25,6 @@ from app.services.ai.rerankers import (
     reset_reranker_singleton,
 )
 
-
 # ---------------------------------------------------------------------
 # NoneReranker
 # ---------------------------------------------------------------------
@@ -115,9 +114,7 @@ def test_factory_falls_back_to_none_reranker_when_cross_encoder_construction_fai
     import app.services.ai.rerankers as rerankers_pkg
 
     def _boom(*args, **kwargs):
-        raise ModuleNotFoundError(
-            "No module named 'sentence_transformers' (simulated)"
-        )
+        raise ModuleNotFoundError("No module named 'sentence_transformers' (simulated)")
 
     monkeypatch.setattr(rerankers_pkg, "CrossEncoderReranker", _boom)
 

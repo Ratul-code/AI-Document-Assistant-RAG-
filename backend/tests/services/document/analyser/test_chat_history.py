@@ -42,7 +42,6 @@ from app.services.document.analyser.prompt import (  # noqa: E402
     build_user_prompt,
 )
 
-
 # ---------------------------------------------------------------------
 # truncate_to_tokens
 # ---------------------------------------------------------------------
@@ -90,7 +89,7 @@ def _conv_messages(rows: list[tuple[str, str, str | None]]) -> list[SimpleNamesp
     means "successful turn".
     """
     out = []
-    for i, (role, content, err) in enumerate(rows):
+    for _i, (role, content, err) in enumerate(rows):
         out.append(
             SimpleNamespace(
                 id=uuid4(),
@@ -117,9 +116,7 @@ class _FakeConversationRepo:
         # Tests pass rows in chronological (oldest → newest) order.
         self._rows = rows
 
-    async def list_messages(
-        self, db, *, conversation_id, owner_id, limit, offset, order
-    ):
+    async def list_messages(self, db, *, conversation_id, owner_id, limit, offset, order):
         out = list(self._rows)
         if order == "desc":
             out.reverse()
@@ -154,7 +151,10 @@ async def test_fetch_recent_turns_returns_pairs_oldest_first(monkeypatch):
 
     assert [m.role for m in msgs] == ["user", "assistant", "user", "assistant"]
     assert [m.content for m in msgs] == [
-        "first q", "first a", "second q", "second a",
+        "first q",
+        "first a",
+        "second q",
+        "second a",
     ]
 
 
@@ -338,7 +338,10 @@ def test_build_messages_with_history_inserts_between_system_and_user():
         history=history,
     )
     assert [m.role for m in msgs] == [
-        "system", "user", "assistant", "user",
+        "system",
+        "user",
+        "assistant",
+        "user",
     ]
     assert msgs[0].content == SYSTEM_PROMPT
     assert msgs[1].content == "earlier q"
@@ -409,9 +412,7 @@ def test_build_user_prompt_groups_by_document():
             embedding_dim=4,
         ),
     ]
-    prompt = build_user_prompt(
-        question="q", top_rows=rows, snippet_chars=200
-    )
+    prompt = build_user_prompt(question="q", top_rows=rows, snippet_chars=200)
     # Numbering is global: [1], [2], [3].
     assert "[1]" in prompt and "[2]" in prompt and "[3]" in prompt
     # Two DOC banners.

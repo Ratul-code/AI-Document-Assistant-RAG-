@@ -84,9 +84,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     logger.info("ws accepted user_id=%s", user_id)
 
     try:
-        await websocket.send_json(
-            {"type": "connected", "user_id": str(user_id)}
-        )
+        await websocket.send_json({"type": "connected", "user_id": str(user_id)})
     except Exception:
         await manager.disconnect(user_id, websocket)
         return
@@ -112,9 +110,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     timed_out.set()
                     # Force the receive loop to wake up and exit.
                     try:
-                        await websocket.close(
-                            code=status.WS_1011_GOING_AWAY
-                        )
+                        await websocket.close(code=status.WS_1011_GOING_AWAY)
                     except Exception:
                         pass
                     return
@@ -158,7 +154,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 # The browser does not send these — liveness uses the
                 # protocol PING/PONG above.
                 try:
-                    payload = json.loads(text)
+                    json.loads(text)
                 except (json.JSONDecodeError, TypeError):
                     continue
     except WebSocketDisconnect:

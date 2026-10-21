@@ -16,7 +16,6 @@ from eval.scripts.score import (
     recall_at_k,
 )
 
-
 # Stable UUIDs for tests (deterministic string compares).
 A = UUID("11111111-1111-1111-1111-111111111111")
 B = UUID("22222222-2222-2222-2222-222222222222")

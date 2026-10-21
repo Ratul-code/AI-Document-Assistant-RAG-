@@ -7,7 +7,7 @@ and delegate here.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,6 @@ from app.core.security import (
     hash_refresh_token,
     verify_password,
 )
-from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.repositories import refresh_token as refresh_repo
 from app.repositories import user as user_repo
@@ -52,8 +51,8 @@ class IssuedTokens:
     user_id: UUID
 
 
-
 # --- Register --------------------------------------------------------------
+
 
 async def register_user(
     db: AsyncSession,
@@ -78,6 +77,7 @@ async def register_user(
 
 # --- Login -----------------------------------------------------------------
 
+
 async def login(db: AsyncSession, *, email: str, password: str) -> tuple[User, IssuedTokens]:
     """Verify credentials and issue a fresh token pair.
 
@@ -98,6 +98,7 @@ async def login(db: AsyncSession, *, email: str, password: str) -> tuple[User, I
 
 # --- Refresh ---------------------------------------------------------------
 
+
 async def refresh(db: AsyncSession, *, raw_refresh_token: str) -> IssuedTokens:
     """Rotate a refresh token.
 
@@ -109,22 +110,21 @@ async def refresh(db: AsyncSession, *, raw_refresh_token: str) -> IssuedTokens:
       4. Otherwise: revoke this row, mint a new pair in the same family, and
          link them via replaced_by_id.
     """
-    settings = get_settings()
     token_hash = hash_refresh_token(raw_refresh_token)
     existing = await refresh_repo.get_by_hash(db, token_hash)
 
     if existing is None:
         raise AuthError("Invalid refresh token")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = existing.expires_at
     if expires_at.tzinfo is None:
         # SQLite returns timezone-aware columns as naive datetimes.
-        expires_at = expires_at.replace(tzinfo=timezone.utc)    
+        expires_at = expires_at.replace(tzinfo=UTC)
 
     revoked_at = existing.revoked_at
     if revoked_at is not None and revoked_at.tzinfo is None:
-        revoked_at = revoked_at.replace(tzinfo=timezone.utc)
+        revoked_at = revoked_at.replace(tzinfo=UTC)
 
     if revoked_at is not None or expires_at <= now:
         # Token was already used or expired. If it was revoked (rotated), this
@@ -145,13 +145,12 @@ async def refresh(db: AsyncSession, *, raw_refresh_token: str) -> IssuedTokens:
         family_id=existing.family_id,
     )
     # Point the just-revoked row at the freshly-created one for audit trail.
-    await refresh_repo.set_replaced_by(
-        db, old=existing, new_id=new_pair.new_token_row_id
-    )
+    await refresh_repo.set_replaced_by(db, old=existing, new_id=new_pair.new_token_row_id)
     return new_pair.issued
 
 
 # --- Logout ----------------------------------------------------------------
+
 
 async def logout(db: AsyncSession, *, raw_refresh_token: str) -> None:
     """Revoke a single refresh token. Idempotent: missing tokens are fine."""
@@ -159,7 +158,6 @@ async def logout(db: AsyncSession, *, raw_refresh_token: str) -> None:
     existing = await refresh_repo.get_by_hash(db, token_hash)
     if existing is not None and existing.revoked_at is None:
         await refresh_repo.revoke(db, existing)
-
 
 
 @dataclass(slots=True)
@@ -170,11 +168,9 @@ class _IssuedInternal:
     new_token_row_id: UUID
 
 
-
-
 # --- Helpers ---------------------------------------------------------------
 
-    
+
 async def _issue_pair(
     db: AsyncSession,
     *,
@@ -184,14 +180,10 @@ async def _issue_pair(
 ) -> _IssuedInternal:
     """Build an access JWT, generate + persist a refresh token, return both."""
     settings = get_settings()
-    refresh_ttl = (
-        ttl_seconds
-        if ttl_seconds is not None
-        else settings.refresh_token_ttl_seconds
-    )
+    refresh_ttl = ttl_seconds if ttl_seconds is not None else settings.refresh_token_ttl_seconds
 
     raw_refresh = generate_refresh_token()
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=refresh_ttl)
+    expires_at = datetime.now(UTC) + timedelta(seconds=refresh_ttl)
 
     row = await refresh_repo.create_refresh_token(
         db,
@@ -214,8 +206,3 @@ async def _issue_pair(
         ),
         new_token_row_id=row.id,
     )
-
-
-
-
-

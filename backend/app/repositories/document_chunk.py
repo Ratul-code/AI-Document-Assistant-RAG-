@@ -122,4 +122,9 @@ def _row(chunk: ChunkSpec) -> dict:
     }
 
 
-__all__ = ["ChunkSpec", "replace_chunks_for_page", "list_chunks_for_page", "list_chunks_for_document"]
+__all__ = [
+    "ChunkSpec",
+    "replace_chunks_for_page",
+    "list_chunks_for_page",
+    "list_chunks_for_document",
+]

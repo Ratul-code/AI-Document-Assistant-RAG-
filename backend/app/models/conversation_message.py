@@ -29,11 +29,10 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
 from app.db.base import Base
-
 from app.models.conversation import MessageRole
 
 if TYPE_CHECKING:
@@ -80,9 +79,7 @@ class ConversationMessage(Base):
     )
 
     # Relationships.
-    conversation: Mapped["Conversation"] = relationship(
-        back_populates="messages", lazy="raise"
-    )
+    conversation: Mapped[Conversation] = relationship(back_populates="messages", lazy="raise")
 
     __table_args__ = (
         # Chat-history fetch: SELECT ... WHERE conversation_id=? ORDER BY created_at.

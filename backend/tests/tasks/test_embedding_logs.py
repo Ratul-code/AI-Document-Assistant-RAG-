@@ -25,9 +25,8 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine
 
 from app.db.base import Base
 from app.models.document import Document, DocumentStatus
@@ -129,9 +128,12 @@ def test_process_one_document_writes_started_log(sync_db_session) -> None:
     sync_db_session.commit()
 
     logs = _logs_for(sync_db_session, doc_id)
-    started = [l for l in logs if l.event_type == DocumentLogEventType.embedding_started.value]
+    started = [
+        row for row in logs if row.event_type == DocumentLogEventType.embedding_started.value
+    ]
     assert len(started) == 1
     import json as _json
+
     meta = _json.loads(started[0].metadata_json)
     assert meta["chunks_total"] == 3
     assert "model" in meta
@@ -145,16 +147,15 @@ def test_process_one_document_writes_one_progress_row_per_batch(
     sync_db_session,
 ) -> None:
     """6 chunks / batch_size=2 = 3 batches → 3 progress rows + 1 started + 1 ready."""
-    owner_id, doc_id = _seed(
-        sync_db_session, ["a", "b", "c", "d", "e", "f"]
-    )
+    owner_id, doc_id = _seed(sync_db_session, ["a", "b", "c", "d", "e", "f"])
 
     _process_one_document(sync_db_session, doc_id, owner_id, batch_size=2)
     sync_db_session.commit()
 
     progress_rows = [
-        l for l in _logs_for(sync_db_session, doc_id)
-        if l.event_type == DocumentLogEventType.embedding_progress.value
+        row
+        for row in _logs_for(sync_db_session, doc_id)
+        if row.event_type == DocumentLogEventType.embedding_progress.value
     ]
     assert len(progress_rows) == 3
 
@@ -165,9 +166,8 @@ def test_process_one_document_writes_one_progress_row_per_batch(
     # (the test only commits at the end, so the auto-default
     # timestamp is the same for all three).
     import json as _json
-    batch_indices = sorted(
-        _json.loads(r.metadata_json)["batch_index"] for r in progress_rows
-    )
+
+    batch_indices = sorted(_json.loads(r.metadata_json)["batch_index"] for r in progress_rows)
     assert batch_indices == [1, 2, 3]
 
     # chunks_done accumulates: 2, 4, 6.
@@ -190,11 +190,13 @@ def test_process_one_document_writes_terminal_ready_log(sync_db_session) -> None
     sync_db_session.commit()
 
     ready_rows = [
-        l for l in _logs_for(sync_db_session, doc_id)
-        if l.event_type == DocumentLogEventType.ready.value
+        row
+        for row in _logs_for(sync_db_session, doc_id)
+        if row.event_type == DocumentLogEventType.ready.value
     ]
     assert len(ready_rows) == 1
     import json as _json
+
     meta = _json.loads(ready_rows[0].metadata_json)
     assert meta["succeeded"] == 2
     assert meta["failed"] == 0
@@ -215,17 +217,16 @@ def test_process_one_document_writes_terminal_failed_log_on_full_failure(
         def embed(self, text: str):  # pragma: no cover
             raise RuntimeError("simulated provider outage")
 
-    monkeypatch.setattr(
-        "app.tasks.embedding.get_default_embedding_model", _AlwaysFailModel
-    )
+    monkeypatch.setattr("app.tasks.embedding.get_default_embedding_model", _AlwaysFailModel)
 
     owner_id, doc_id = _seed(sync_db_session, ["a", "b"])
     _process_one_document(sync_db_session, doc_id, owner_id)
     sync_db_session.commit()
 
     failed_rows = [
-        l for l in _logs_for(sync_db_session, doc_id)
-        if l.event_type == DocumentLogEventType.failed.value
+        row
+        for row in _logs_for(sync_db_session, doc_id)
+        if row.event_type == DocumentLogEventType.failed.value
     ]
     assert len(failed_rows) == 1
 
@@ -252,9 +253,7 @@ def test_process_one_document_publishes_progress_events(sync_db_session) -> None
     # the module-level import in `app.tasks.embedding`, so patching
     # `ws_publisher.publish_embedding_progress` directly would not
     # intercept the call.
-    with patch(
-        "app.tasks.embedding.publish_embedding_progress", side_effect=_capture
-    ):
+    with patch("app.tasks.embedding.publish_embedding_progress", side_effect=_capture):
         _process_one_document(sync_db_session, doc_id, owner_id, batch_size=2)
         sync_db_session.commit()
 
@@ -294,9 +293,7 @@ def test_process_one_document_publishes_failed_event_on_full_failure(
         def embed(self, text: str):  # pragma: no cover
             raise RuntimeError("simulated provider outage")
 
-    monkeypatch.setattr(
-        "app.tasks.embedding.get_default_embedding_model", _AlwaysFailModel
-    )
+    monkeypatch.setattr("app.tasks.embedding.get_default_embedding_model", _AlwaysFailModel)
 
     owner_id, doc_id = _seed(sync_db_session, ["a", "b"])
     captured: list[dict] = []
@@ -332,10 +329,11 @@ def test_process_one_document_with_no_chunks_writes_only_started_log(
     sync_db_session.commit()
 
     logs = _logs_for(sync_db_session, doc_id)
-    event_types = [l.event_type for l in logs]
+    event_types = [row.event_type for row in logs]
     assert event_types == [DocumentLogEventType.embedding_started.value]
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(pytest.main([__file__, "-v"]))

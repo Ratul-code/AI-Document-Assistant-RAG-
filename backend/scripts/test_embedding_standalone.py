@@ -29,7 +29,9 @@ def main() -> None:
     single = model.encode("What is the capital of France?", normalize_embeddings=True)
     print(f"    type={type(single).__name__}  shape={single.shape}  dtype={single.dtype}")
     print(f"    first 5 values: {single[:5].tolist()}")
-    print(f"    vector norm:   {float(np.linalg.norm(single)):.4f}  (should be ~1.0 after normalize)")
+    print(
+        f"    vector norm:   {float(np.linalg.norm(single)):.4f}  (should be ~1.0 after normalize)"
+    )
     print()
 
     # --- 2. Batch encode ---

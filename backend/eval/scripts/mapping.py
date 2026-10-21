@@ -37,11 +37,10 @@ matches a chunk joined from paragraphs with another.
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 from uuid import UUID
 
 from eval.schema import PassageMapping, PassageMappingEntry
-
 
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -88,8 +87,8 @@ def build_passage_mapping(
     *,
     question_id: str,
     document_id: UUID,
-    passages: Iterable[tuple[str, str]],        # (passage_id, passage_text)
-    chunks: list[tuple[int, str]],             # (chunk_index, chunk_text)
+    passages: Iterable[tuple[str, str]],  # (passage_id, passage_text)
+    chunks: list[tuple[int, str]],  # (chunk_index, chunk_text)
     threshold: float = 0.5,
     dataset_version: str = "v1",
 ) -> tuple[list[tuple[UUID, int]], PassageMapping]:

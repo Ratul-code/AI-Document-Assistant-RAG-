@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
@@ -19,6 +19,7 @@ _BCRYPT_ROUNDS = 12
 
 
 # --- Passwords -------------------------------------------------------------
+
 
 def _to_bytes(s: str) -> bytes:
     """Bcrypt requires bytes; the bcrypt>=4 binding rejects >72 bytes
@@ -44,6 +45,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # --- Access tokens (stateless JWT) -----------------------------------------
 
+
 def create_access_token(
     subject: str | uuid.UUID,
     *,
@@ -56,7 +58,7 @@ def create_access_token(
     the payload (e.g. {"email": "..."}). TTL falls back to settings.
     """
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ttl = ttl_seconds if ttl_seconds is not None else settings.access_token_ttl_seconds
 
     payload: dict[str, Any] = {
@@ -87,6 +89,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
 
 # --- Refresh tokens (stateful, hashed at rest) -----------------------------
 
+
 def generate_refresh_token() -> str:
     """Cryptographically secure URL-safe random string (~43 chars)."""
     return secrets.token_urlsafe(32)
@@ -94,9 +97,9 @@ def generate_refresh_token() -> str:
 
 def hash_refresh_token(raw: str) -> str:
     """SHA-256 hex digest. We use SHA-256 (not bcrypt) because:
-       - the input has ~256 bits of entropy from token_urlsafe, so brute-force
-         is infeasible without DB access,
-       - we need O(1) lookup by hash on every refresh request,
-       - bcrypt is slow on purpose; we don't want that overhead per request.
+    - the input has ~256 bits of entropy from token_urlsafe, so brute-force
+      is infeasible without DB access,
+    - we need O(1) lookup by hash on every refresh request,
+    - bcrypt is slow on purpose; we don't want that overhead per request.
     """
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()

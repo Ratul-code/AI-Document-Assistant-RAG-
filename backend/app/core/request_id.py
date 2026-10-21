@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import logging
 from contextvars import ContextVar, Token
-from typing import Optional
 
 # The default value is the empty string, NOT None. The logging filter
 # (below) reads this var and writes it onto the LogRecord; a None

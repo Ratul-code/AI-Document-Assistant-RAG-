@@ -136,6 +136,7 @@ def test_determinism_secondary_sort() -> None:
     # Build all three rows with the SAME document_id so the secondary
     # sort hits chunk_index.
     from uuid import uuid4
+
     same_doc_id = uuid4()
     rows = []
     for i in range(3):

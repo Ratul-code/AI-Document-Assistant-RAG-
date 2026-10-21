@@ -21,7 +21,7 @@ from app.core.rate_limit import (
     _rate_limit_exceeded_handler,
     limiter,
 )
-from app.db.session import get_engine, dispose_engine
+from app.db.session import dispose_engine, get_engine
 from app.services.ai.embeddings import get_default_embedding_model
 from app.services.ai.rerankers import get_default_reranker
 from app.services.pubsub.ws_subscriber import get_ws_subscriber
@@ -69,16 +69,15 @@ async def _worker_registry_keepalive(
     try:
         while not stop.is_set():
             try:
-                await client.sadd(
-                    settings.ws_worker_registry_key, settings.worker_id
-                )
+                await client.sadd(settings.ws_worker_registry_key, settings.worker_id)
                 await client.expire(
                     settings.ws_worker_registry_key,
                     settings.ws_worker_registry_ttl_s,
                 )
             except Exception as exc:
                 logger.warning(
-                    "ws worker registry refresh failed: %s", exc,
+                    "ws worker registry refresh failed: %s",
+                    exc,
                 )
             # Sleep in short slices so shutdown is responsive.
             sleep_for = float(settings.ws_worker_keepalive_s)
@@ -88,17 +87,13 @@ async def _worker_registry_keepalive(
                 slept += 0.5
     finally:
         try:
-            await client.srem(
-                settings.ws_worker_registry_key, settings.worker_id
-            )
+            await client.srem(settings.ws_worker_registry_key, settings.worker_id)
         except Exception:
-            logger.debug("ws worker registry SREM on shutdown failed",
-                         exc_info=True)
+            logger.debug("ws worker registry SREM on shutdown failed", exc_info=True)
         try:
             await client.aclose()
         except Exception:
-            logger.debug("ws worker registry client close failed",
-                         exc_info=True)
+            logger.debug("ws worker registry client close failed", exc_info=True)
 
 
 @asynccontextmanager
@@ -131,13 +126,16 @@ async def lifespan(app: FastAPI):
         embed_model = get_default_embedding_model()
         logger.info(
             "[startup] embedding model preloaded: %s (dim=%d) in %.2fs",
-            embed_model.model_name, embed_model.dim, time.monotonic() - t0,
+            embed_model.model_name,
+            embed_model.dim,
+            time.monotonic() - t0,
         )
     except Exception as exc:  # noqa: BLE001 — defensive: startup must not crash
         logger.warning(
             "[startup] embedding model preload failed (%s: %s); "
             "the first /analysis/query request will pay the load cost.",
-            type(exc).__name__, exc,
+            type(exc).__name__,
+            exc,
         )
 
     if settings.analysis_rerank_enabled:
@@ -146,13 +144,15 @@ async def lifespan(app: FastAPI):
             reranker = get_default_reranker()
             logger.info(
                 "[startup] reranker preloaded: %s in %.2fs",
-                reranker.name, time.monotonic() - t1,
+                reranker.name,
+                time.monotonic() - t1,
             )
         except Exception as exc:  # noqa: BLE001 — defensive: rerank is opt-in
             logger.warning(
                 "[startup] reranker preload failed (%s: %s); "
                 "queries will fall back to retriever order until restart.",
-                type(exc).__name__, exc,
+                type(exc).__name__,
+                exc,
             )
 
     # Start the Redis pub/sub subscriber so any WS event the worker
@@ -177,12 +177,11 @@ async def lifespan(app: FastAPI):
     if keepalive_task is not None:
         try:
             await asyncio.wait_for(keepalive_task, timeout=2.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             keepalive_task.cancel()
             logger.warning("ws worker registry keepalive: cancelled after 2s timeout")
         except Exception:
-            logger.debug("ws worker registry keepalive ended with error",
-                         exc_info=True)
+            logger.debug("ws worker registry keepalive ended with error", exc_info=True)
 
     # Stop the subscriber so no in-flight messages try to write to
     # sockets we're about to close.

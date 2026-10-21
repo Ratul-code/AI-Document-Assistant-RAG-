@@ -21,7 +21,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from uuid import UUID
 
 # Bootstrap so we can run this from the repo root.
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -54,11 +53,15 @@ def main() -> int:
     parser.add_argument("--hybrid-bm25-k", type=int, default=40)
     parser.add_argument("--hybrid-rrf-k", type=int, default=60)
     parser.add_argument(
-        "--pool-multiplier", type=int, default=None,
+        "--pool-multiplier",
+        type=int,
+        default=None,
         help="Override ANALYSIS_RERANK_POOL_MULTIPLIER for this run.",
     )
     parser.add_argument(
-        "--rerank-top-k", type=int, default=None,
+        "--rerank-top-k",
+        type=int,
+        default=None,
         help="Override ANALYSIS_RERANK_TOP_K for this run.",
     )
     args = parser.parse_args()
@@ -85,7 +88,9 @@ def main() -> int:
     print("=" * 70)
     print("RERANK DEBUG — one question")
     print("=" * 70)
-    print(f"  embedder               : {settings.embedding_provider} -> {get_default_embedding_model().model_name}")
+    print(
+        f"  embedder               : {settings.embedding_provider} -> {get_default_embedding_model().model_name}"
+    )
     print(f"  retrieval_mode         : {args.retrieval_mode}")
     print(f"  top_k                  : {args.top_k}")
     print(f"  rerank_enabled         : {settings.analysis_rerank_enabled}")
@@ -105,8 +110,9 @@ def main() -> int:
 
     # Load the question from the dataset if not provided.
     if args.question is None:
-        from eval.scripts.build_dataset import BACKEND_DIR as _BD
         from eval.schema import Doc2DialDataset
+        from eval.scripts.build_dataset import BACKEND_DIR as _BD
+
         dataset_path = _BD / "eval" / "datasets" / args.dataset / "dataset.json"
         ds = Doc2DialDataset.model_validate_json(dataset_path.read_text())
         question = ds.questions[0].question
@@ -117,15 +123,16 @@ def main() -> int:
     print()
 
     # Open the persisted corpus.
-    from eval.scripts.ingest_corpus import cache_dir_for, read_manifest
+    from sqlalchemy.orm import Session, sessionmaker
+
     from eval.scripts._db import persisted_engine
+    from eval.scripts.ingest_corpus import read_manifest
     from eval.scripts.run_retrieval_eval import (
         _hybrid_retrieve_for_question,
-        _retrieve_for_question,
         _rerank_chunk_ids,
+        _retrieve_for_question,
     )
     from eval.scripts.seed_corpus import get_or_create_owner_id
-    from sqlalchemy.orm import sessionmaker, Session
 
     embedder = get_default_embedding_model()
     manifest = read_manifest(args.dataset)
@@ -142,6 +149,7 @@ def main() -> int:
 
     with SessionLocal() as db:
         from app.repositories.embedding_search import fetch_candidate_rows
+
         all_candidates = fetch_candidate_rows(db, owner_id=owner_id, document_ids=None)
     lookup = {c.chunk_id: c for c in all_candidates}
     print(f"Corpus: {len(all_candidates)} chunks available for rerank lookup.")
@@ -151,16 +159,25 @@ def main() -> int:
         t0 = time.time()
         if args.retrieval_mode == "hybrid":
             retrieved_ids = _hybrid_retrieve_for_question(
-                db, owner_id=owner_id, scope_document_ids=None,
-                question=question, embedder=embedder, top_k=args.top_k,
+                db,
+                owner_id=owner_id,
+                scope_document_ids=None,
+                question=question,
+                embedder=embedder,
+                top_k=args.top_k,
                 min_cosine=0.0,
-                dense_top_k=args.hybrid_dense_k, bm25_top_k=args.hybrid_bm25_k,
+                dense_top_k=args.hybrid_dense_k,
+                bm25_top_k=args.hybrid_bm25_k,
                 rrf_k=args.hybrid_rrf_k,
             )
         else:
             retrieved_ids = _retrieve_for_question(
-                db, owner_id=owner_id, scope_document_ids=None,
-                question=question, embedder=embedder, top_k=args.top_k,
+                db,
+                owner_id=owner_id,
+                scope_document_ids=None,
+                question=question,
+                embedder=embedder,
+                top_k=args.top_k,
                 min_cosine=0.0,
             )
         retrieve_ms = (time.time() - t0) * 1000
@@ -188,9 +205,7 @@ def main() -> int:
         else settings.analysis_rerank_pool_multiplier
     )
     rerank_top_k = (
-        args.rerank_top_k
-        if args.rerank_top_k is not None
-        else settings.analysis_rerank_top_k
+        args.rerank_top_k if args.rerank_top_k is not None else settings.analysis_rerank_top_k
     )
     pool_size = min(len(retrieved_ids), rerank_top_k * max(1, pool_multiplier))
     pool_ids = retrieved_ids[:pool_size]
@@ -198,10 +213,11 @@ def main() -> int:
     pool_texts = [(r.text if r else "") for r in pool_rows]
 
     # Raw cross-encoder scores.
-    from app.services.document.analyser import rerank_top_rows
     pairs = [(question, t) for t in pool_texts]
     print()
-    print(f"Rerank pool: {len(pool_texts)} chunks (top_k={rerank_top_k}, pool_mult={pool_multiplier})")
+    print(
+        f"Rerank pool: {len(pool_texts)} chunks (top_k={rerank_top_k}, pool_mult={pool_multiplier})"
+    )
     print()
     t0 = time.time()
     cross_scores = []
@@ -209,10 +225,14 @@ def main() -> int:
         # We need a real CrossEncoder to score raw pairs. The
         # CrossEncoderReranker wraps the model, so we use it.
         if hasattr(reranker, "_model"):
-            cross_scores = [float(s) for s in reranker._model.predict(
-                pairs, batch_size=getattr(reranker, "_batch_size", 16),
-                show_progress_bar=False,
-            )]
+            cross_scores = [
+                float(s)
+                for s in reranker._model.predict(
+                    pairs,
+                    batch_size=getattr(reranker, "_batch_size", 16),
+                    show_progress_bar=False,
+                )
+            ]
         else:
             # NoneReranker: scores are meaningless.
             cross_scores = [0.0] * len(pairs)
@@ -221,7 +241,7 @@ def main() -> int:
         cross_scores = []
     score_ms = (time.time() - t0) * 1000
     print(f"Raw cross-encoder scores (computed in {score_ms:.1f} ms):")
-    for i, (row, score) in enumerate(zip(pool_rows, cross_scores)):
+    for i, (row, score) in enumerate(zip(pool_rows, cross_scores, strict=False)):
         title = row.document_title if row else "?"
         snip = (row.text or "")[:60].replace("\n", " ")
         print(f"  [{i:2d}] score={score:+.4f}  {title:25s}  {snip!r}")
@@ -254,11 +274,13 @@ def main() -> int:
         print("Rerank order == retriever order — the reranker did NOT re-order this question.")
     else:
         moved_up = sum(
-            1 for new_pos, cid in enumerate(reranked_ids)
+            1
+            for new_pos, cid in enumerate(reranked_ids)
             if cid in retrieved_ids and (retrieved_ids.index(cid) + 1) > new_pos + 1
         )
         moved_down = sum(
-            1 for new_pos, cid in enumerate(reranked_ids)
+            1
+            for new_pos, cid in enumerate(reranked_ids)
             if cid in retrieved_ids and (retrieved_ids.index(cid) + 1) < new_pos + 1
         )
         print(

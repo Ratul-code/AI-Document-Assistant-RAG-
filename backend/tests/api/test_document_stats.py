@@ -170,9 +170,9 @@ def test_stats_other_users_doc_returns_404() -> None:
     doc_id = asyncio.run(_seed_doc(owner_b))
 
     r = c_a.get(f"/api/v1/documents/{doc_id}/stats")
-    assert r.status_code == 404, (
-        f"expected 404 for cross-owner stats read, got {r.status_code}: {r.text}"
-    )
+    assert (
+        r.status_code == 404
+    ), f"expected 404 for cross-owner stats read, got {r.status_code}: {r.text}"
 
 
 def test_stats_empty_doc_returns_zeros() -> None:
@@ -284,8 +284,7 @@ def test_stats_response_includes_document_list_item() -> None:
         "updated_at",
     }
     assert set(body["document"].keys()) == expected, (
-        f"unexpected document fields: "
-        f"{set(body['document'].keys()) ^ expected}"
+        f"unexpected document fields: " f"{set(body['document'].keys()) ^ expected}"
     )
 
 

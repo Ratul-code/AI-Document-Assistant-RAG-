@@ -49,6 +49,7 @@ def _get_user_id_from_cookie(cookie_value: str) -> str:
     """Decode the JWT payload to grab the user UUID."""
     import base64
     import json as _json
+
     payload_b64 = cookie_value.split(".")[1]
     # base64url padding
     payload_b64 += "=" * (4 - len(payload_b64) % 4)
@@ -56,9 +57,12 @@ def _get_user_id_from_cookie(cookie_value: str) -> str:
     return payload["sub"]
 
 
-async def _seed_document(owner_id_str: str, status: DocumentStatus = DocumentStatus.processing) -> str:
+async def _seed_document(
+    owner_id_str: str, status: DocumentStatus = DocumentStatus.processing
+) -> str:
     """Insert a document row directly and return its id."""
     from uuid import UUID
+
     factory = get_session_factory()
     async with factory() as session:  # type: AsyncSession
         doc = Document(
@@ -83,7 +87,7 @@ def test_confirm_requires_auth() -> None:
 
 
 def test_confirm_nonexistent_returns_404() -> None:
-    cookie = _register(f"u1-{uuid.uuid4().hex[:8]}@x.com")
+    _register(f"u1-{uuid.uuid4().hex[:8]}@x.com")
     r = client.post(f"/api/v1/documents/{uuid.uuid4()}/confirm")
     assert r.status_code == 404, r.text
 
@@ -95,16 +99,16 @@ def test_confirm_other_users_doc_returns_404() -> None:
     user_a = _get_user_id_from_cookie(cookie_a)
 
     # User B
-    cookie_b = _register(f"ub-{uuid.uuid4().hex[:8]}@x.com")
+    _register(f"ub-{uuid.uuid4().hex[:8]}@x.com")
 
     # A seeds a document
     doc_id = asyncio.run(_seed_document(user_a))
 
     # B tries to confirm A's document
     r = client.post(f"/api/v1/documents/{doc_id}/confirm")
-    assert r.status_code == 404, (
-        f"expected 404 when confirming another user's doc, got {r.status_code}: {r.text}"
-    )
+    assert (
+        r.status_code == 404
+    ), f"expected 404 when confirming another user's doc, got {r.status_code}: {r.text}"
 
 
 def test_confirm_happy_path() -> None:

@@ -131,6 +131,7 @@ def _build_engine() -> AsyncEngine:
     # `connect_args` (`check_same_thread=False`) line up with the
     # connection that SQLAlchemy actually opens.
     if is_sqlite:
+
         @event.listens_for(engine.sync_engine, "connect")
         def _enable_sqlite_fks(dbapi_connection, _connection_record):  # noqa: ANN001
             cursor = dbapi_connection.cursor()

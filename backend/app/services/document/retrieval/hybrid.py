@@ -20,16 +20,15 @@ what we want when dense and BM25 disagree on what's relevant.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Sequence
+from collections.abc import Sequence
 
 from app.repositories.embedding_search import CandidateRow
 from app.services.document.analyser import rank_top_rows
 from app.services.document.retrieval.bm25 import (
     BM25Index,
-    build_bm25_index,
     bm25_top_rows,
+    build_bm25_index,
 )
-
 
 # Defaults chosen for the Doc2Dial eval corpus — see ADR-018 (to be
 # filed when this lands). These are the same numbers we expect to

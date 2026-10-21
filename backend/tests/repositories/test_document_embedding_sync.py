@@ -119,9 +119,13 @@ def test_upsert_embedding_updates_existing_row(sync_db_session, fixture_owners) 
         EmbeddingSpec(chunk_id=chunk_ids[0], model_name="m", dim=3, vector=_vector(99)),
     )
     sync_db_session.commit()
-    rows = sync_db_session.execute(
-        select(DocumentEmbedding).where(DocumentEmbedding.chunk_id == chunk_ids[0])
-    ).scalars().all()
+    rows = (
+        sync_db_session.execute(
+            select(DocumentEmbedding).where(DocumentEmbedding.chunk_id == chunk_ids[0])
+        )
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert rows[0].vector == _vector(99)
 

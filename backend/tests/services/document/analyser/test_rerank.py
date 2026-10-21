@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import AsyncIterator
 from uuid import UUID, uuid4
 
 import pytest
@@ -81,8 +81,11 @@ class _FakeEmbeddingModel:
 
     def embed(self, text: str):  # returns an EmbeddingResult-shaped object
         from app.services.ai.embeddings import EmbeddingResult
+
         return EmbeddingResult(
-            vector=list(self._vector), dim=self.dim, model_name=self.model_name,
+            vector=list(self._vector),
+            dim=self.dim,
+            model_name=self.model_name,
         )
 
     def embed_batch(self, texts: list[str]):
@@ -108,10 +111,9 @@ class _FakeAsyncSession:
     pass
 
 
-def _candidate(
-    *, title: str, vector: list[float] | None = None, text: str | None = None
-):
+def _candidate(*, title: str, vector: list[float] | None = None, text: str | None = None):
     from app.repositories.embedding_search import CandidateRow
+
     return CandidateRow(
         chunk_id=uuid4(),
         document_id=uuid4(),
@@ -149,8 +151,10 @@ def _set_list_ready(monkeypatch, value=()):
 
 def _patch_sync_session(monkeypatch):
     import app.db.sync_session as sync_mod
+
     monkeypatch.setattr(
-        sync_mod, "run_in_sync_session",
+        sync_mod,
+        "run_in_sync_session",
         lambda fn, *a, **kw: fn(None, *a, **kw),
     )
 
@@ -165,12 +169,12 @@ async def test_rerank_enabled_reorders_and_badge_citations(monkeypatch) -> None:
     """When the reranker is on, the final top-K reflects the
     reranker's ordering, not the retriever's. The citation payload
     carries `rerank=True` and `original_score` for every entry."""
+    from app.services.ai.rerankers import get_default_reranker
     from app.services.document.analyser import (
         AnalysisDoneEvent,
         AnalysisErrorEvent,
         analyse_query,
     )
-    from app.services.ai.rerankers import get_default_reranker
 
     # conftest sets ANALYSIS_RERANK_ENABLED=false for the whole suite;
     # enable it for this test (the reranker is stubbed via monkeypatch
@@ -197,10 +201,11 @@ async def test_rerank_enabled_reorders_and_badge_citations(monkeypatch) -> None:
     llm = _FakeLLMProvider(tokens=["ok"])
     stub = _StubReranker()
     monkeypatch.setattr(
-        "app.services.document.analyser.get_default_reranker", lambda: stub,
+        "app.services.document.analyser.get_default_reranker",
+        lambda: stub,
     )
-    # Avoid any factory singleton carryover from a previous test.
-    get_default_reranker  # referenced import; reset handled by autouse fixture
+    # Singleton reset between tests is handled by the autouse fixture in
+    # tests/conftest.py.
 
     events = []
     async for ev in analyse_query(
@@ -377,7 +382,10 @@ def test_rerank_top_rows_with_none_reranker_is_identity() -> None:
     ]
     ranked = [(r, float(i)) for i, r in enumerate(rows)]
     result = rerank_top_rows(
-        ranked, "q", reranker=NoneReranker(), top_k=2,
+        ranked,
+        "q",
+        reranker=NoneReranker(),
+        top_k=2,
     )
     # Identity: original order, original scores.
     assert [r.document_title for r, _ in result.top_rows] == ["A", "B"]
@@ -408,7 +416,11 @@ def test_rerank_top_rows_reorders_and_returns_original_scores() -> None:
             return [(len(documents) - 1 - i, float(n - i)) for i in range(n)]
 
     result = rerank_top_rows(
-        ranked, "q", reranker=_Reverse(), top_k=2, pool_multiplier=3,
+        ranked,
+        "q",
+        reranker=_Reverse(),
+        top_k=2,
+        pool_multiplier=3,
     )
     # Reranker with top_k=2 returns 2 rows: C first (index 2), B
     # second (index 1).
@@ -440,7 +452,11 @@ def test_rerank_top_rows_respects_pool_multiplier() -> None:
             return [(i, float(n - i)) for i in range(n)]
 
     result = rerank_top_rows(
-        ranked, "q", reranker=_Spy(), top_k=2, pool_multiplier=1,
+        ranked,
+        "q",
+        reranker=_Spy(),
+        top_k=2,
+        pool_multiplier=1,
     )
     # Pool is just `ranked[:2]` → A and B. C, D, E never reach the
     # reranker.

@@ -43,7 +43,9 @@ class PdfParser:
                 text = page.extract_text() or ""
             except Exception as exc:
                 logger.warning(
-                    "pdf parser: extract_text failed page=%d err=%s", index, exc,
+                    "pdf parser: extract_text failed page=%d err=%s",
+                    index,
+                    exc,
                 )
                 text = ""
 

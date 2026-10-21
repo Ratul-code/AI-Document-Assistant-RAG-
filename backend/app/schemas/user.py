@@ -19,7 +19,6 @@ class UserCreate(UserCredential):
     name: str = Field(min_length=1, max_length=255)
 
 
-
 class UserRead(BaseModel):
     """Safe user representation returned by the API."""
 

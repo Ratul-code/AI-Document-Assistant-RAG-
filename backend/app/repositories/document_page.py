@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 
 from app.models.document import Document
 from app.models.document_page import DocumentPage, OcrStatus, TextSource
-
 from app.services.document.parser._base import ParsedPage
 
 

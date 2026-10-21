@@ -20,8 +20,9 @@ The doc-selection join table is in a sibling file
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import delete, func, select, update
@@ -32,7 +33,6 @@ from sqlalchemy.orm import Session
 from app.models.conversation import Conversation, MessageRole
 from app.models.conversation_document import ConversationDocument
 from app.models.conversation_message import ConversationMessage
-
 
 # ============================================================
 # Conversation CRUD — async (HTTP routes)
@@ -110,9 +110,7 @@ async def count_conversations(
     *,
     owner_id: UUID,
 ) -> int:
-    stmt = select(func.count()).select_from(Conversation).where(
-        Conversation.owner_id == owner_id
-    )
+    stmt = select(func.count()).select_from(Conversation).where(Conversation.owner_id == owner_id)
     result = await db.execute(stmt)
     return int(result.scalar_one())
 
@@ -146,9 +144,7 @@ async def update_conversation(
     if values:
         values["updated_at"] = datetime.now(tz=conv.updated_at.tzinfo)
         await db.execute(
-            update(Conversation)
-            .where(Conversation.id == conversation_id)
-            .values(**values)
+            update(Conversation).where(Conversation.id == conversation_id).values(**values)
         )
         await db.flush()
         await db.refresh(conv)
@@ -208,9 +204,7 @@ async def set_conversation_documents(
 
     # Wipe existing selection.
     await db.execute(
-        delete(ConversationDocument).where(
-            ConversationDocument.conversation_id == conversation_id
-        )
+        delete(ConversationDocument).where(ConversationDocument.conversation_id == conversation_id)
     )
 
     if not document_ids:
@@ -226,9 +220,7 @@ async def set_conversation_documents(
         stmt = (
             pg_insert(ConversationDocument)
             .values(rows)
-            .on_conflict_do_nothing(
-                index_elements=["conversation_id", "document_id"]
-            )
+            .on_conflict_do_nothing(index_elements=["conversation_id", "document_id"])
         )
     else:
         stmt = pg_insert(ConversationDocument).values(rows)
@@ -265,8 +257,10 @@ async def count_conversation_documents(
     conversation_id: UUID,
 ) -> int:
     """One-query count for sidebar "📎 N docs" badges."""
-    stmt = select(func.count()).select_from(ConversationDocument).where(
-        ConversationDocument.conversation_id == conversation_id
+    stmt = (
+        select(func.count())
+        .select_from(ConversationDocument)
+        .where(ConversationDocument.conversation_id == conversation_id)
     )
     result = await db.execute(stmt)
     return int(result.scalar_one())
@@ -375,8 +369,10 @@ async def count_messages(
     conv = await get_conversation(db, conversation_id, owner_id=owner_id)
     if conv is None:
         return 0
-    stmt = select(func.count()).select_from(ConversationMessage).where(
-        ConversationMessage.conversation_id == conversation_id
+    stmt = (
+        select(func.count())
+        .select_from(ConversationMessage)
+        .where(ConversationMessage.conversation_id == conversation_id)
     )
     result = await db.execute(stmt)
     return int(result.scalar_one())

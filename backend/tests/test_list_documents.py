@@ -20,6 +20,8 @@ from uuid import UUID
 os.environ["SUPABASE_URL"] = ""
 os.environ["SUPABASE_SERVICE_ROLE_KEY"] = ""
 
+from datetime import UTC
+
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
@@ -60,6 +62,7 @@ def _register(client: TestClient, email: str) -> str:
 def _decode_sub(cookie_value: str) -> str:
     import base64
     import json as _json
+
     payload_b64 = cookie_value.split(".")[1]
     payload_b64 += "=" * (4 - len(payload_b64) % 4)
     return _json.loads(base64.urlsafe_b64decode(payload_b64))["sub"]
@@ -79,6 +82,7 @@ async def _seed(
     created_at values for ordering tests. Positive = older.
     """
     from datetime import datetime, timedelta, timezone
+
     factory = get_session_factory()
     async with factory() as session:
         doc = Document(
@@ -99,7 +103,7 @@ async def _seed(
             await session.execute(
                 Document.__table__.update()
                 .where(Document.id == doc.id)
-                .values(created_at=datetime.now(timezone.utc) - timedelta(seconds=created_offset_seconds))
+                .values(created_at=datetime.now(UTC) - timedelta(seconds=created_offset_seconds))
             )
             await session.commit()
         return str(doc.id)
@@ -270,12 +274,18 @@ def test_list_response_shape() -> None:
     item = body["items"][0]
     # Expected fields
     expected = {
-        "id", "title", "filename", "mime_type", "file_size_bytes",
-        "status", "error_message", "uploaded_at", "created_at", "updated_at",
+        "id",
+        "title",
+        "filename",
+        "mime_type",
+        "file_size_bytes",
+        "status",
+        "error_message",
+        "uploaded_at",
+        "created_at",
+        "updated_at",
     }
-    assert set(item.keys()) == expected, (
-        f"unexpected fields: {set(item.keys()) ^ expected}"
-    )
+    assert set(item.keys()) == expected, f"unexpected fields: {set(item.keys()) ^ expected}"
     # Internal fields must NOT leak
     for forbidden in ("storage_bucket", "storage_path", "owner_id", "file_hash"):
         assert forbidden not in item, f"leaked internal field: {forbidden}"

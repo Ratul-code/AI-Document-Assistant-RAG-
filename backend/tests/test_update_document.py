@@ -90,9 +90,7 @@ async def _get_title(document_id: str) -> str | None:
 
     factory = get_session_factory()
     async with factory() as session:
-        result = await session.execute(
-            select(Document).where(Document.id == UUID(document_id))
-        )
+        result = await session.execute(select(Document).where(Document.id == UUID(document_id)))
         doc = result.scalar_one_or_none()
         return doc.title if doc is not None else None
 
@@ -103,17 +101,13 @@ async def _get_title(document_id: str) -> str | None:
 
 
 def test_update_requires_auth() -> None:
-    r = client.patch(
-        f"/api/v1/documents/{uuid.uuid4()}", json={"title": "New"}
-    )
+    r = client.patch(f"/api/v1/documents/{uuid.uuid4()}", json={"title": "New"})
     assert r.status_code == 401, r.text
 
 
 def test_update_nonexistent_returns_404() -> None:
     _register(f"u1-{uuid.uuid4().hex[:8]}@x.com")
-    r = client.patch(
-        f"/api/v1/documents/{uuid.uuid4()}", json={"title": "New"}
-    )
+    r = client.patch(f"/api/v1/documents/{uuid.uuid4()}", json={"title": "New"})
     assert r.status_code == 404, r.text
 
 
@@ -126,12 +120,9 @@ def test_update_other_users_doc_returns_404() -> None:
 
     doc_id = asyncio.run(_seed_document(user_a, title="Original"))
 
-    r = client.patch(
-        f"/api/v1/documents/{doc_id}", json={"title": "Hacked"}
-    )
+    r = client.patch(f"/api/v1/documents/{doc_id}", json={"title": "Hacked"})
     assert r.status_code == 404, (
-        f"expected 404 when updating another user's doc, got "
-        f"{r.status_code}: {r.text}"
+        f"expected 404 when updating another user's doc, got " f"{r.status_code}: {r.text}"
     )
     # And the title was NOT changed.
     assert asyncio.run(_get_title(doc_id)) == "Original"
@@ -142,9 +133,7 @@ def test_update_happy_path() -> None:
     owner = _get_user_id_from_cookie(cookie)
     doc_id = asyncio.run(_seed_document(owner, title="Original"))
 
-    r = client.patch(
-        f"/api/v1/documents/{doc_id}", json={"title": "Renamed"}
-    )
+    r = client.patch(f"/api/v1/documents/{doc_id}", json={"title": "Renamed"})
     assert r.status_code == 200, r.text
     body = r.json()
 
@@ -162,9 +151,7 @@ def test_update_empty_title_rejected() -> None:
     owner = _get_user_id_from_cookie(cookie)
     doc_id = asyncio.run(_seed_document(owner))
 
-    r = client.patch(
-        f"/api/v1/documents/{doc_id}", json={"title": ""}
-    )
+    r = client.patch(f"/api/v1/documents/{doc_id}", json={"title": ""})
     assert r.status_code == 422, r.text
 
 
@@ -174,9 +161,7 @@ def test_update_too_long_title_rejected() -> None:
     owner = _get_user_id_from_cookie(cookie)
     doc_id = asyncio.run(_seed_document(owner))
 
-    r = client.patch(
-        f"/api/v1/documents/{doc_id}", json={"title": "x" * 201}
-    )
+    r = client.patch(f"/api/v1/documents/{doc_id}", json={"title": "x" * 201})
     assert r.status_code == 422, r.text
 
 
@@ -188,9 +173,7 @@ def test_update_returns_document_list_item_shape() -> None:
     owner = _get_user_id_from_cookie(cookie)
     doc_id = asyncio.run(_seed_document(owner, title="Original"))
 
-    r = client.patch(
-        f"/api/v1/documents/{doc_id}", json={"title": "Renamed"}
-    )
+    r = client.patch(f"/api/v1/documents/{doc_id}", json={"title": "Renamed"})
     assert r.status_code == 200, r.text
     body = r.json()
 
