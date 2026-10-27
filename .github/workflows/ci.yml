@@ -180,7 +180,31 @@ jobs:
           echo "🔍 Running mypy..."
           mypy app
 
-      # ---- 6. Run pytest ----
+      # ---- 6. Run database migrations ----
+      # The app NEVER creates tables itself — the schema comes from
+      # Alembic migrations (`backend/alembic/versions/`). The Postgres
+      # service container starts with an EMPTY database, so without
+      # this step every DB-backed test fails with
+      # `psycopg.errors.UndefinedTable: relation "users" does not exist`.
+      #
+      # Running the real migrations (rather than `create_all`) means CI
+      # also verifies the migration files themselves are valid and
+      # apply cleanly — `create_all` would happily build a schema that
+      # production can never reach.
+      - name: Run database migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://test:test@localhost:5432/test
+          DATABASE_URL_SYNC: postgresql+psycopg://test:test@localhost:5432/test
+          APP_ENV: test
+          JWT_SECRET: test-jwt-secret-not-for-production-use-only-ci
+        run: |
+          echo "🗄️  Running Alembic migrations..."
+          alembic upgrade head
+          echo "🗄️  Verifying schema was created..."
+          alembic current
+
+      # ---- 7. Run pytest ----
       - name: Run tests (pytest)
         working-directory: backend
         env:
@@ -200,7 +224,7 @@ jobs:
           echo "🧪 Running pytest..."
           pytest -v --tb=short --maxfail=5
 
-      # ---- 7. Run eval suite ----
+      # ---- 8. Run eval suite ----
       # The eval/ folder grades the LLM on test datasets. We run it in
       # a "smoke" mode if available, otherwise just run the eval tests.
       - name: Run eval suite
@@ -220,7 +244,7 @@ jobs:
             echo "ℹ️  No eval/tests directory found, skipping"
           fi
 
-      # ---- 8. Smoke test the API ----
+      # ---- 9. Smoke test the API ----
       # Start the API in the background, hit the health endpoint, kill it.
       # "Does the app even boot and respond?" — that's the smoke test.
       - name: Smoke test (API boots and responds)
@@ -261,7 +285,7 @@ jobs:
           # Clean up
           kill $UVICORN_PID 2>/dev/null || true
 
-      # ---- 9. Upload test reports (optional, useful for debugging) ----
+      # ---- 10. Upload test reports (optional, useful for debugging) ----
       - name: Upload pytest reports
         if: always()
         uses: actions/upload-artifact@v4
