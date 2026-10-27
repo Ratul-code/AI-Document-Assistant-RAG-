@@ -120,70 +120,50 @@ def _logs_for(session, doc_id) -> list[DocumentLog]:
 
 
 def test_process_one_document_writes_started_log(sync_db_session) -> None:
-    """The worker writes one `embedding.started` log row at the top,
-    carrying `chunks_total` and the model name in `metadata`."""
+    """The worker writes exactly ONE `embedding` log row for the stage,
+    carrying the chunk counts in `metadata`."""
     owner_id, doc_id = _seed(sync_db_session, ["a", "b", "c"])
 
     _process_one_document(sync_db_session, doc_id, owner_id)
     sync_db_session.commit()
 
     logs = _logs_for(sync_db_session, doc_id)
-    started = [
-        row for row in logs if row.event_type == DocumentLogEventType.embedding_started.value
-    ]
-    assert len(started) == 1
+    embedding_rows = [row for row in logs if row.event_type == DocumentLogEventType.embedding.value]
+    assert len(embedding_rows) == 1
     import json as _json
 
-    meta = _json.loads(started[0].metadata_json)
+    meta = _json.loads(embedding_rows[0].metadata_json)
     assert meta["chunks_total"] == 3
-    assert "model" in meta
-    # The model is whatever the test env configured — either the
-    # deterministic stub or the real Qwen3 — but the field must be
-    # present and a non-empty string.
-    assert isinstance(meta["model"], str) and meta["model"]
+    assert meta["succeeded"] == 3
+    assert meta["failed"] == 0
 
 
 def test_process_one_document_writes_one_progress_row_per_batch(
     sync_db_session,
 ) -> None:
-    """6 chunks / batch_size=2 = 3 batches → 3 progress rows + 1 started + 1 ready."""
+    """6 chunks / batch_size=2 = 3 batches. The activity feed stays at
+    ONE row per stage, so there is exactly one `embedding` row — the
+    per-batch progress lives in the WS events, not in the feed."""
     owner_id, doc_id = _seed(sync_db_session, ["a", "b", "c", "d", "e", "f"])
 
     _process_one_document(sync_db_session, doc_id, owner_id, batch_size=2)
     sync_db_session.commit()
 
-    progress_rows = [
-        row
-        for row in _logs_for(sync_db_session, doc_id)
-        if row.event_type == DocumentLogEventType.embedding_progress.value
-    ]
-    assert len(progress_rows) == 3
+    logs = _logs_for(sync_db_session, doc_id)
+    embedding_rows = [row for row in logs if row.event_type == DocumentLogEventType.embedding.value]
+    assert len(embedding_rows) == 1
 
-    # batch_index should be 1, 2, 3. We sort by the metadata's
-    # batch_index rather than the row's created_at/id ordering,
-    # because SQLite truncates created_at to second precision and
-    # all three progress rows can be tied in the same transaction
-    # (the test only commits at the end, so the auto-default
-    # timestamp is the same for all three).
     import json as _json
 
-    batch_indices = sorted(_json.loads(r.metadata_json)["batch_index"] for r in progress_rows)
-    assert batch_indices == [1, 2, 3]
-
-    # chunks_done accumulates: 2, 4, 6.
-    chunks_done = [
-        _json.loads(r.metadata_json)["chunks_done"]
-        for r in sorted(
-            progress_rows,
-            key=lambda r: _json.loads(r.metadata_json)["batch_index"],
-        )
-    ]
-    assert chunks_done == [2, 4, 6]
+    meta = _json.loads(embedding_rows[0].metadata_json)
+    assert meta["chunks_total"] == 6
+    assert meta["succeeded"] == 6
+    assert meta["failed"] == 0
 
 
 def test_process_one_document_writes_terminal_ready_log(sync_db_session) -> None:
-    """A successful run ends with a `ready` log row carrying the
-    succeeded/failed counts in metadata."""
+    """A successful run ends with a single `embedding` log row carrying
+    the succeeded/failed counts in metadata."""
     owner_id, doc_id = _seed(sync_db_session, ["a", "b"])
 
     _process_one_document(sync_db_session, doc_id, owner_id)
@@ -192,7 +172,7 @@ def test_process_one_document_writes_terminal_ready_log(sync_db_session) -> None
     ready_rows = [
         row
         for row in _logs_for(sync_db_session, doc_id)
-        if row.event_type == DocumentLogEventType.ready.value
+        if row.event_type == DocumentLogEventType.embedding.value
     ]
     assert len(ready_rows) == 1
     import json as _json
@@ -205,7 +185,8 @@ def test_process_one_document_writes_terminal_ready_log(sync_db_session) -> None
 def test_process_one_document_writes_terminal_failed_log_on_full_failure(
     sync_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Whole-batch failure → terminal `failed` log row, not `ready`."""
+    """Whole-batch failure → terminal `embedding.failed` log row, not
+    the success `embedding` row."""
 
     class _AlwaysFailModel:
         model_name = "always-fail-test"
@@ -223,12 +204,14 @@ def test_process_one_document_writes_terminal_failed_log_on_full_failure(
     _process_one_document(sync_db_session, doc_id, owner_id)
     sync_db_session.commit()
 
+    logs = _logs_for(sync_db_session, doc_id)
     failed_rows = [
-        row
-        for row in _logs_for(sync_db_session, doc_id)
-        if row.event_type == DocumentLogEventType.failed.value
+        row for row in logs if row.event_type == DocumentLogEventType.embedding_failed.value
     ]
     assert len(failed_rows) == 1
+    # The success row must NOT also be present — exactly one terminal
+    # row for the stage.
+    assert not [row for row in logs if row.event_type == DocumentLogEventType.embedding.value]
 
 
 # ---------------------------------------------------------------------------
@@ -320,9 +303,9 @@ def test_process_one_document_publishes_failed_event_on_full_failure(
 def test_process_one_document_with_no_chunks_writes_only_started_log(
     sync_db_session,
 ) -> None:
-    """Edge case: a doc with zero chunks should still get a started
-    log row (so the activity feed shows we considered it) but no
-    progress rows and no terminal ready/failed log."""
+    """Edge case: a doc with zero chunks still gets exactly one
+    `embedding` log row (message says "no chunks") — the stage is
+    still recorded in the feed."""
     owner_id, doc_id = _seed(sync_db_session, [])
 
     _process_one_document(sync_db_session, doc_id, owner_id)
@@ -330,7 +313,14 @@ def test_process_one_document_with_no_chunks_writes_only_started_log(
 
     logs = _logs_for(sync_db_session, doc_id)
     event_types = [row.event_type for row in logs]
-    assert event_types == [DocumentLogEventType.embedding_started.value]
+    assert event_types == [DocumentLogEventType.embedding.value]
+
+    import json as _json
+
+    meta = _json.loads(logs[0].metadata_json)
+    assert meta["chunks_total"] == 0
+    assert meta["succeeded"] == 0
+    assert meta["failed"] == 0
 
 
 if __name__ == "__main__":

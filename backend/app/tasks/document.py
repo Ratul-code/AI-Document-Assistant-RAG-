@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from app.core.celery_app import celery_app  # noqa: F401 -- keeps shared_task bound to our app
 from app.db.sync_session import run_in_sync_session
 from app.models.document import Document, DocumentStatus
-from app.models.document_log import DocumentLog
+from app.models.document_log import DocumentLog, DocumentLogEventType
 from app.models.document_page import DocumentPage
 from app.repositories.document import delete_document_any_owner
 from app.repositories.document_chunk import replace_chunks_for_page
@@ -139,7 +139,7 @@ def _mark_stage_failed(
         )
     except Exception:
         logger.warning(
-            "process_document: failed to write stage-failed-log event_type=%s " "document_id=%s",
+            "process_document: failed to write stage-failed-log event_type=%s document_id=%s",
             event_type,
             document_id,
             exc_info=True,
@@ -560,7 +560,7 @@ def process_document(self, document_id: str) -> dict:
             _log_one(
                 doc_uuid,
                 document.owner_id,
-                event_type="parsing",
+                event_type=DocumentLogEventType.parsing.value,
                 message=f"Parsed {len(parsed)} pages",
                 metadata={"pages": len(parsed)},
             )
@@ -580,7 +580,7 @@ def process_document(self, document_id: str) -> dict:
             _log_one(
                 doc_uuid,
                 document.owner_id,
-                event_type="chunking",
+                event_type=DocumentLogEventType.chunking.value,
                 message=f"Chunked into {chunks_total} chunks",
                 metadata={"chunks_total": chunks_total},
             )
@@ -672,7 +672,7 @@ def process_document(self, document_id: str) -> dict:
                     _mark_stage_failed,
                     doc_uuid,
                     document.owner_id,
-                    event_type="processing_failed",
+                    event_type=DocumentLogEventType.processing_failed.value,
                     error_message=error_message,
                 )
             else:

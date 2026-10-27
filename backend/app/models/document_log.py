@@ -54,6 +54,14 @@ class DocumentLogEventType(str, enum.Enum):
     `embedding.started`, per-page `chunking.progress`, per-batch
     `embedding.progress`, lifecycle `ready`/`failed`) were erased so
     the activity log reads as a clean pipeline summary.
+
+    NOTE on the value spellings: these are underscore-separated
+    (`parsing_failed`, not `parsing.failed`). That matches both what
+    the workers actually write into `document_logs.event_type` and
+    the `case` labels the frontend switches on. Earlier revisions of
+    this enum used dotted values, which never reached the wire —
+    anything matching on `DocumentLogEventType.<x>.value` against
+    real rows would silently fail to match.
     """
 
     # --- Upload phase (one row, emitted at confirm time) ---
@@ -61,21 +69,21 @@ class DocumentLogEventType(str, enum.Enum):
 
     # --- parse phase ---
     parsing = "parsing"  # N pages parsed (terminal row)
-    parsing_failed = "parsing.failed"  # parse raised; doc -> FAILED
+    parsing_failed = "parsing_failed"  # parse raised; doc -> FAILED
 
     # --- chunking phase ---
     chunking = "chunking"  # total chunks committed (terminal row)
-    chunking_failed = "chunking.failed"  # chunker raised; doc -> FAILED
+    chunking_failed = "chunking_failed"  # chunker raised; doc -> FAILED
 
     # --- embedding phase ---
-    embedding = "embedding"  # {succeeded, failed, model} (terminal row)
-    embedding_failed = "embedding.failed"  # all batches failed; doc -> FAILED
+    embedding = "embedding"  # {succeeded, failed} (terminal row)
+    embedding_failed = "embedding_failed"  # all batches failed; doc -> FAILED
 
     # --- Catch-all for unknown-stage failures in process_document ---
-    processing_failed = "processing.failed"  # stage unknown; doc -> FAILED
+    processing_failed = "processing_failed"  # stage unknown; doc -> FAILED
 
     # --- Operator / out-of-band ---
-    document_deleted = "document.deleted"  # user deleted the doc
+    document_deleted = "document_deleted"  # user deleted the doc
 
 
 class DocumentLog(Base):

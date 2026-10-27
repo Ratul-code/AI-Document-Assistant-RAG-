@@ -51,7 +51,7 @@ from app.api.dependencies import CurrentUserDep, DbDep
 from app.core.config import get_settings
 from app.core.rate_limit import limiter
 from app.models.document import Document, DocumentStatus
-from app.models.document_log import DocumentLog
+from app.models.document_log import DocumentLog, DocumentLogEventType
 from app.repositories import document as document_repo
 from app.repositories import document_log as document_log_repo
 from app.repositories import document_stats as document_stats_repo
@@ -314,7 +314,7 @@ async def confirm_upload(
             db,
             document_id=updated.id,
             owner_id=current_user.id,
-            event_type="uploaded",
+            event_type=DocumentLogEventType.uploaded.value,
             message=f"Uploaded {updated.filename}",
             metadata={"filename": updated.filename},
         )
@@ -737,7 +737,7 @@ async def delete_document(
             get_supabase_storage().delete_file(storage_bucket, storage_path)
         except Exception:
             logger.exception(
-                "failed to delete storage object bucket=%s path=%s " "for document_id=%s",
+                "failed to delete storage object bucket=%s path=%s for document_id=%s",
                 storage_bucket,
                 storage_path,
                 id,
@@ -1236,7 +1236,7 @@ async def _write_log_and_publish(
         )
     except Exception:
         logger.exception(
-            "_write_log_and_publish: add_log_async failed " "document_id=%s event_type=%s",
+            "_write_log_and_publish: add_log_async failed document_id=%s event_type=%s",
             document_id,
             event_type,
         )
@@ -1244,7 +1244,7 @@ async def _write_log_and_publish(
 
     if log_id is None:
         logger.warning(
-            "_write_log_and_publish: log_id is None after insert " "document_id=%s event_type=%s",
+            "_write_log_and_publish: log_id is None after insert document_id=%s event_type=%s",
             document_id,
             event_type,
         )
@@ -1260,7 +1260,7 @@ async def _write_log_and_publish(
             row = _session.get(DocumentLog, log_id)
             if row is None:
                 logger.warning(
-                    "_write_log_and_publish: row vanished before push " "log_id=%s event_type=%s",
+                    "_write_log_and_publish: row vanished before push log_id=%s event_type=%s",
                     log_id,
                     event_type,
                 )
@@ -1272,7 +1272,7 @@ async def _write_log_and_publish(
             )
         except Exception:
             logger.exception(
-                "_write_log_and_publish: ws publish failed " "log_id=%s event_type=%s",
+                "_write_log_and_publish: ws publish failed log_id=%s event_type=%s",
                 log_id,
                 event_type,
             )
@@ -1292,8 +1292,7 @@ async def _write_log_and_publish(
         # best-effort anyway and the dialog does an initial REST
         # fetch on open, so a missed push is recoverable.
         logger.exception(
-            "_write_log_and_publish: failed to register after_commit hook "
-            "log_id=%s event_type=%s",
+            "_write_log_and_publish: failed to register after_commit hook log_id=%s event_type=%s",
             log_id,
             event_type,
         )
@@ -1307,7 +1306,7 @@ async def _write_log_and_publish(
                 )
         except Exception:
             logger.exception(
-                "_write_log_and_publish: fallback publish failed " "log_id=%s event_type=%s",
+                "_write_log_and_publish: fallback publish failed log_id=%s event_type=%s",
                 log_id,
                 event_type,
             )

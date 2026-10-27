@@ -62,8 +62,9 @@ import logging
 from typing import Any
 
 import jwt
-from fastapi import Request
+from fastapi import Request, Response
 from fastapi.responses import JSONResponse
+from limits import RateLimitItem
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -143,22 +144,61 @@ limiter: Limiter = Limiter(
     # frontend can show a friendly "Slow down" toast without a separate
     # probe request.
     #
-    # NOTE: slowapi's header-injection path (extension.py:738) only
-    # works when the route either returns a `Response` directly or
-    # accepts a `response: Response` parameter. Routes that return a
-    # Pydantic model (e.g. `DocumentListResponse`) without a
-    # `response: Response` parameter crash with
+    # NOTE: slowapi's route-level header-injection path
+    # (extension.py:738) calls `_inject_headers(kwargs.get("response"), ...)`
+    # for routes that return a Pydantic model rather than a `Response`.
+    # When such a route has no `response: Response` parameter,
+    # `kwargs.get("response")` is `None` and slowapi raises
     #   "parameter `response` must be an instance of starlette.responses.Response"
-    # because slowapi passes `kwargs.get("response")` (None) into
-    # `_inject_headers`. See the "parameter `response` must be..." 500
-    # we hit on GET /api/v1/documents. We turn this off globally and
-    # can re-enable per-route later by adding a `response: Response`
-    # arg + using `response_model`-with-JSONResponse if needed.
-    headers_enabled=False,
+    # — the 500 we hit on GET /api/v1/documents.
+    #
+    # We enable headers globally (the 429 handler in this module needs
+    # them to attach `Retry-After`) and neutralise the crash by
+    # wrapping `_inject_headers` below so a `None` response is skipped
+    # instead of raising. Routes that DO declare `response: Response`
+    # still get the headers; the rest are unaffected.
+    headers_enabled=True,
     # Compute Retry-After from the actual window so 429 responses
     # include a useful "seconds until reset" hint.
     retry_after="http-date",
 )
+
+
+def _safe_inject_headers(
+    self: Limiter,
+    response: Response | None,
+    current_limit: tuple[RateLimitItem, list[str]] | None,
+) -> Response | None:
+    """`_inject_headers` that tolerates a `None` response.
+
+    slowapi's route wrapper calls `_inject_headers(kwargs.get("response"), ...)`
+    for any route that doesn't return a `Response` directly. For routes
+    without a `response: Response` parameter that argument is `None`, and
+    the upstream implementation raises
+    `"parameter `response` must be an instance of starlette.responses.Response"`.
+
+    Skipping the injection (returning `None` unchanged) is the correct
+    behaviour for those routes: there is no response object to attach
+    headers to. Routes that do declare `response: Response` — and the 429
+    handler, which always passes a real `JSONResponse` — are unaffected and
+    still receive `X-RateLimit-*` and `Retry-After`.
+    """
+    if response is None:
+        return None
+    if current_limit is None:
+        # Upstream's own body starts with `current_limit is not None`
+        # but its type annotation doesn't admit the None case. Nothing
+        # to inject either way.
+        return response
+    return _original_inject_headers(self, response, current_limit)
+
+
+# Keep a reference to the upstream implementation so the wrapper above
+# can delegate to it without recursing into itself, then install the
+# wrapper. The `type: ignore` is needed because mypy rejects assigning
+# to a method on an imported class.
+_original_inject_headers = Limiter._inject_headers
+Limiter._inject_headers = _safe_inject_headers  # type: ignore[method-assign, assignment]
 
 
 def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:

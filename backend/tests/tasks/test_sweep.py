@@ -18,9 +18,8 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.models.document import Document, DocumentStatus
@@ -29,66 +28,53 @@ from app.tasks.sweep import sweep_stuck_learning_documents
 
 
 @pytest.fixture
-def sync_db_session():
-    """Yield a sync session bound to an in-memory SQLite DB."""
-    engine = create_engine("sqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine, expire_on_commit=False)
-    session = Session()
-    try:
-        yield session
-    finally:
-        session.close()
-        engine.dispose()
+def patched_session_factory():
+    """Yield an async session factory backed by an in-memory SQLite DB.
 
+    The sweep task opens its own session via `get_session_factory()`, so
+    the factory we hand it MUST be an *async* factory bound to an
+    *async* engine — `app/tasks/sweep.py::_find_stuck_documents` does
+    `async with session_factory() as db`. Binding an `async_sessionmaker`
+    to a sync `create_engine(...)` engine raises
+    `ArgumentError: AsyncEngine expected, got Engine(sqlite:///:memory:)`
+    at query time.
 
-@pytest.fixture
-def patched_session_factory(sync_db_session):
-    """Make the sweep's `get_session_factory()` return an async session
-    bound to the *same* in-memory DB the test is seeding.
-
-    SQLite in-memory + aiosqlite lets multiple connections see the
-    same DB only when they share a URI like `file:test?mode=memory&...`
-    OR when we serialize access through a single connection. The
-    simplest reliable thing for tests is to expose an AsyncSession
-    backed by a *sync* connection — i.e. use `sessionmaker` from the
-    async side and run on the same thread.
-
-    We use `async_sessionmaker(class_=AsyncSession, sync_session=...)`
-    via the trick below: open the in-memory DB with `StaticPool` so a
-    single connection is reused across threads/loops, then wrap it in
-    an async session.
+    `StaticPool` keeps a single connection alive so the async side and
+    the seeding side observe the same in-memory database; without it
+    each `await` would open a fresh, empty DB and our seeded rows would
+    vanish.
     """
-    from sqlalchemy.pool import StaticPool
-
-    engine = create_engine(
-        "sqlite:///:memory:",
-        future=True,
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine)
-    # Use the SAME engine as the sync fixture so writes via sync_db_session
-    # are visible to the async factory.
-    sync_db_session.close()
-    # Recreate rows from the original session in the new one (the
-    # original is closed). We do this by re-running the test's seed
-    # later via a hook — instead, simpler: rebind sync_db_session too.
-    sync_db_session.bind = engine
-    sync_db_session.close()
-    # Reopen the session on the shared engine.
-    fresh = sessionmaker(bind=engine, expire_on_commit=False)()
-    # Replace the original fixture's session with the shared one.
-    # Tests have already seeded against the *original* session; since
-    # we re-create the schema on the new engine, the seed is gone.
-    # So tests must seed via this `fresh` session. To keep tests
-    # simple, return both.
     async_factory = async_sessionmaker(bind=engine, expire_on_commit=False)
 
-    yield fresh, async_factory
+    # Create the schema on the async engine. `create_all` is a sync
+    # DDL call, so it goes through `run_sync` on the async connection.
+    import asyncio
+
+    async def _create_schema():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_create_schema())
+
+    yield async_factory
+
+    # Dispose the engine so the in-memory DB is torn down with the test.
+    asyncio.run(engine.dispose())
 
 
-def _seed_doc(
+def _run(coro):
+    """Run an async coroutine from a sync test."""
+    import asyncio
+
+    return asyncio.run(coro)
+
+
+async def _seed_doc(
     session,
     *,
     status: DocumentStatus,
@@ -115,9 +101,9 @@ def _seed_doc(
         status=status,
     )
     session.add(doc)
-    session.flush()
+    await session.flush()
     doc.updated_at = updated_at
-    session.commit()
+    await session.commit()
     return doc
 
 
@@ -126,13 +112,18 @@ def test_sweep_requeues_learning_docs_older_than_threshold(
 ) -> None:
     """A LEARNING doc whose `updated_at` is older than the threshold
     must be re-enqueued to the embedding task."""
-    sync_session, async_factory = patched_session_factory
+    async_factory = patched_session_factory
     now = datetime.now(UTC)
-    stuck_doc = _seed_doc(
-        sync_session,
-        status=DocumentStatus.learning,
-        updated_at=now - timedelta(minutes=60),
-    )
+
+    async def _seed():
+        async with async_factory() as session:
+            return await _seed_doc(
+                session,
+                status=DocumentStatus.learning,
+                updated_at=now - timedelta(minutes=60),
+            )
+
+    stuck_doc = _run(_seed())
 
     with (
         patch("app.tasks.sweep.get_session_factory", return_value=async_factory),
@@ -150,19 +141,26 @@ def test_sweep_requeues_learning_docs_older_than_threshold(
     assert mock_celery.send_task.call_count == 1
     call = mock_celery.send_task.call_args
     assert call.args[0] == "app.tasks.embedding.embed_chunks_for_document"
-    assert call.args[1] == [str(stuck_doc.id), str(stuck_doc.owner_id)]
+    # The sweep passes the task args as the `args=` keyword argument,
+    # not positionally — see `app/tasks/sweep.py`.
+    assert call.kwargs["args"] == [str(stuck_doc.id), str(stuck_doc.owner_id)]
 
 
 def test_sweep_skips_learning_docs_below_threshold(
     patched_session_factory,
 ) -> None:
-    sync_session, async_factory = patched_session_factory
+    async_factory = patched_session_factory
     now = datetime.now(UTC)
-    _seed_doc(
-        sync_session,
-        status=DocumentStatus.learning,
-        updated_at=now - timedelta(minutes=5),
-    )
+
+    async def _seed():
+        async with async_factory() as session:
+            await _seed_doc(
+                session,
+                status=DocumentStatus.learning,
+                updated_at=now - timedelta(minutes=5),
+            )
+
+    _run(_seed())
 
     with (
         patch("app.tasks.sweep.get_session_factory", return_value=async_factory),
@@ -179,19 +177,24 @@ def test_sweep_skips_learning_docs_below_threshold(
 def test_sweep_ignores_non_learning_docs(patched_session_factory) -> None:
     """READY / FAILED / UPLOADED / PROCESSING docs must never be
     re-enqueued — they're either terminal or handled by other paths."""
-    sync_session, async_factory = patched_session_factory
+    async_factory = patched_session_factory
     now = datetime.now(UTC)
-    for status in (
-        DocumentStatus.ready,
-        DocumentStatus.failed,
-        DocumentStatus.uploaded,
-        DocumentStatus.processing,
-    ):
-        _seed_doc(
-            sync_session,
-            status=status,
-            updated_at=now - timedelta(hours=24),
-        )
+
+    async def _seed():
+        async with async_factory() as session:
+            for status in (
+                DocumentStatus.ready,
+                DocumentStatus.failed,
+                DocumentStatus.uploaded,
+                DocumentStatus.processing,
+            ):
+                await _seed_doc(
+                    session,
+                    status=status,
+                    updated_at=now - timedelta(hours=24),
+                )
+
+    _run(_seed())
 
     with (
         patch("app.tasks.sweep.get_session_factory", return_value=async_factory),
@@ -207,14 +210,19 @@ def test_sweep_ignores_non_learning_docs(patched_session_factory) -> None:
 def test_sweep_respects_max_docs_per_run(patched_session_factory) -> None:
     """The hard cap prevents one tick from enqueueing a thundering
     herd if a long outage leaves many stuck docs at once."""
-    sync_session, async_factory = patched_session_factory
+    async_factory = patched_session_factory
     now = datetime.now(UTC)
-    for _ in range(5):
-        _seed_doc(
-            sync_session,
-            status=DocumentStatus.learning,
-            updated_at=now - timedelta(minutes=60),
-        )
+
+    async def _seed():
+        async with async_factory() as session:
+            for _ in range(5):
+                await _seed_doc(
+                    session,
+                    status=DocumentStatus.learning,
+                    updated_at=now - timedelta(minutes=60),
+                )
+
+    _run(_seed())
 
     with (
         patch("app.tasks.sweep.get_session_factory", return_value=async_factory),
@@ -234,16 +242,23 @@ def test_sweep_continues_when_one_enqueue_fails(
     patched_session_factory,
 ) -> None:
     """A single bad enqueue must not stop the rest of the sweep."""
-    sync_session, async_factory = patched_session_factory
+    async_factory = patched_session_factory
     now = datetime.now(UTC)
-    docs = [
-        _seed_doc(
-            sync_session,
-            status=DocumentStatus.learning,
-            updated_at=now - timedelta(minutes=60),
-        )
-        for _ in range(3)
-    ]
+
+    async def _seed():
+        docs = []
+        async with async_factory() as session:
+            for _ in range(3):
+                docs.append(
+                    await _seed_doc(
+                        session,
+                        status=DocumentStatus.learning,
+                        updated_at=now - timedelta(minutes=60),
+                    )
+                )
+        return docs
+
+    docs = _run(_seed())
 
     call_count = {"n": 0}
 
@@ -264,5 +279,5 @@ def test_sweep_continues_when_one_enqueue_fails(
     assert result["found"] == 3
     assert result["requeued"] == 2
     assert mock_celery.send_task.call_count == 3
-    sent_ids = {call.args[1][0] for call in mock_celery.send_task.call_args_list}
+    sent_ids = {call.kwargs["args"][0] for call in mock_celery.send_task.call_args_list}
     assert sent_ids == {str(d.id) for d in docs}

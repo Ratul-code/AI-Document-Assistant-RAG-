@@ -37,7 +37,7 @@ from app.db.sync_session import run_in_sync_session
 from app.models.document import Document, DocumentStatus
 from app.models.document_chunk import DocumentChunk
 from app.models.document_embedding import EmbeddingStatus
-from app.models.document_log import DocumentLog
+from app.models.document_log import DocumentLog, DocumentLogEventType
 from app.repositories.document_embedding import (
     EmbeddingSpec,
     list_pending_chunk_ids,
@@ -296,19 +296,19 @@ def _process_one_document(
     # stage — `uploaded → parsing → chunking → embedding` — so this
     # is the only embedding row.
     if chunks_total == 0:
-        embedding_event_type = "embedding"
+        embedding_event_type = DocumentLogEventType.embedding.value
         embedding_message = "Embedding complete (no chunks)"
     elif succeeded == 0 and failed == 0:
-        embedding_event_type = "embedding"
+        embedding_event_type = DocumentLogEventType.embedding.value
         embedding_message = "Embedding complete (already up to date)"
     elif succeeded >= 1:
-        embedding_event_type = "embedding"
+        embedding_event_type = DocumentLogEventType.embedding.value
         embedding_message = (
             f"Embedding complete "
             f"({succeeded} embedded" + (f", {failed} failed" if failed else "") + ")"
         )
     else:
-        embedding_event_type = "embedding_failed"
+        embedding_event_type = DocumentLogEventType.embedding_failed.value
         embedding_message = f"Embedding failed ({failed} chunks)"
 
     _log_and_publish(
