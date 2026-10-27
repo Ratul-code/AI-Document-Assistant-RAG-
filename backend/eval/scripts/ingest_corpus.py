@@ -247,9 +247,7 @@ def main(argv: list[str] | None = None) -> int:
                     total_chunks += n_chunks
                     succeeded += 1
                     if idx % 100 == 0 or idx == len(docs):
-                        print(
-                            f"  [{idx}/{len(docs)}] {title}: " f"{n_pages} pages, {n_chunks} chunks"
-                        )
+                        print(f"  [{idx}/{len(docs)}] {title}: {n_pages} pages, {n_chunks} chunks")
                     if idx % 200 == 0:
                         db.commit()
                 except Exception as exc:

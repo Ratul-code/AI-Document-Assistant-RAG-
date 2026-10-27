@@ -245,7 +245,7 @@ def seed_one_document(
         document_task._persist_pages(db, doc_id, parsed)
 
         # 6. Chunk pages.
-        n_chunks = document_task._chunk_pages_for_document(db, doc_id)
+        n_chunks = document_task._chunk_pages_for_document(db, doc_id, owner_id)
 
         # 7. Embed all chunks + flip to READY. The embedding helper
         #    sets status=ready (or failed) at the end.

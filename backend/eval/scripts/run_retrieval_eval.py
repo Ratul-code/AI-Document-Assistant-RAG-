@@ -45,6 +45,7 @@ from sqlalchemy import select, tuple_
 
 from eval.schema import Doc2DialDataset
 from eval.scripts.ingest_corpus import (
+    cache_dir_for,
     read_manifest,
 )
 from eval.scripts.score import (
@@ -56,6 +57,16 @@ from eval.scripts.score import (
 from eval.scripts.score import (
     mrr as mrr_score,
 )
+
+# `cache_dir_for` is re-exported (not called) in this module: the eval
+# tests monkeypatch `eval.scripts.run_retrieval_eval.cache_dir_for` to
+# point the manifest lookup at a tmp dir. Without this import the
+# monkeypatch target does not exist and the patch raises AttributeError.
+__all__ = [
+    "cache_dir_for",
+    "main",
+    "verify_corpus_ready",
+]
 
 # --------------------------------------------------------------------------
 # Pre-flight: corpus + model-mismatch refusal
@@ -475,9 +486,7 @@ def render_report(
     lines.append(f"- Retriever: {_format_metrics(metrics)}")
     if rerank_metrics is not None:
         lines.append("")
-        lines.append(
-            f"- **With rerank** (`{rerank_provider}`): " f"{_format_metrics(rerank_metrics)}"
-        )
+        lines.append(f"- **With rerank** (`{rerank_provider}`): {_format_metrics(rerank_metrics)}")
         # Side-by-side delta — the portfolio number.
         d_r1 = rerank_metrics.recall_at_1 - metrics.recall_at_1
         d_r5 = rerank_metrics.recall_at_5 - metrics.recall_at_5
@@ -1100,7 +1109,7 @@ def main(argv: list[str] | None = None) -> int:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(report_md)
 
-    print(f"\nWrote {results_path} and {report_path}\n" f"Overall: {_format_metrics(metrics)}")
+    print(f"\nWrote {results_path} and {report_path}\nOverall: {_format_metrics(metrics)}")
     if rerank_metrics is not None and rerank_provider is not None:
         # Print the rerank column + delta so the rerank effect is
         # visible on stdout — otherwise the only signal is buried
@@ -1109,7 +1118,7 @@ def main(argv: list[str] | None = None) -> int:
         d_r5 = rerank_metrics.recall_at_5 - metrics.recall_at_5
         d_r10 = rerank_metrics.recall_at_10 - metrics.recall_at_10
         d_mrr = rerank_metrics.mrr - metrics.mrr
-        print(f"With rerank ({rerank_provider}): " f"{_format_metrics(rerank_metrics)}")
+        print(f"With rerank ({rerank_provider}): {_format_metrics(rerank_metrics)}")
         print(
             f"Delta (rerank − retriever): "
             f"R@1 {d_r1:+.3f}  ·  R@5 {d_r5:+.3f}  ·  "
