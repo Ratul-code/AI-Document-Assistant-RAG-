@@ -254,36 +254,98 @@ jobs:
           DATABASE_URL_SYNC: postgresql+psycopg://test:test@localhost:5432/test
           REDIS_URL: redis://localhost:6379/0
           CELERY_BROKER_URL: redis://localhost:6379/1
+          CELERY_RESULT_BACKEND: redis://localhost:6379/2
           APP_ENV: test
           APP_DEBUG: 'false'
           JWT_SECRET: test-jwt-secret-not-for-production-use-only-ci
         run: |
-          echo "💨 Starting API for smoke test..."
+          echo "💨 Starting API + Celery worker for smoke test..."
+
+          # Start a Celery worker. `/api/v1/health/ready` runs a
+          # "celery" probe that round-trips the `app.tasks.document.ping`
+          # task through the broker and waits for a WORKER to execute it
+          # (see app/api/v1/endpoints/health.py::_sync_celery_ping). With
+          # no worker running, the task sits in the queue and the probe
+          # times out after 3s -> the endpoint returns 503 and `curl -fsS`
+          # fails the step.
+          #
+          # `--pool=solo` runs tasks in the main process (no prefork),
+          # which is what we want in a CI container: no extra processes,
+          # no fork-safety concerns.
+          celery -A app.core.celery_app worker \
+            --loglevel=info --pool=solo > /tmp/celery.log 2>&1 &
+          CELERY_PID=$!
+
           # Start uvicorn in the background, log to a file
           uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/uvicorn.log 2>&1 &
           UVICORN_PID=$!
 
-          # Wait up to 30s for the server to be ready
+          # Wait up to 60s for the server to be ready. The first run
+          # downloads + loads the embedding model, which can take a
+          # while on a cold CI cache.
           echo "⏳ Waiting for API to be ready..."
-          for i in {1..30}; do
+          API_UP=0
+          for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8000/api/v1/health/live > /dev/null 2>&1; then
               echo "✅ API is up after ${i}s"
+              API_UP=1
               break
             fi
             sleep 1
           done
+          if [ "$API_UP" -ne 1 ]; then
+            echo "❌ API did not come up in time. uvicorn log:"
+            tail -50 /tmp/uvicorn.log
+            exit 1
+          fi
+
+          # Wait for the Celery worker to register with the broker.
+          # The readiness probe needs a worker that is actually
+          # consuming, not one that has just been spawned.
+          echo "⏳ Waiting for Celery worker to register..."
+          WORKER_UP=0
+          for i in $(seq 1 30); do
+            if grep -q "ready\." /tmp/celery.log 2>/dev/null; then
+              echo "✅ Celery worker ready after ${i}s"
+              WORKER_UP=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$WORKER_UP" -ne 1 ]; then
+            echo "❌ Celery worker did not register in time. celery log:"
+            tail -50 /tmp/celery.log
+            exit 1
+          fi
 
           # Hit the health endpoints
           echo "🏥 Hitting /api/v1/health/live..."
           curl -fsS http://127.0.0.1:8000/api/v1/health/live
           echo ""
           echo "🏥 Hitting /api/v1/health/ready..."
-          curl -fsS http://127.0.0.1:8000/api/v1/health/ready
-          echo ""
+          # Print the body even on failure — the JSON names the failing
+          # dependency (database / redis / celery / llm) and its detail.
+          # `curl -fsS` alone hides it behind "exit code 22".
+          READY_OUT=$(curl -sS -w "\n%{http_code}" http://127.0.0.1:8000/api/v1/health/ready) || true
+          # Split body / status code portably. `head -n -1` is GNU-only
+          # (BSD `head` on macOS rejects it with "illegal line count
+          # -- -1") and `tail -n +2` still includes the LAST line, so
+          # it would leave the status code in the body. `sed '$d'`
+          # deletes the final line and works on both.
+          READY_CODE=$(echo "$READY_OUT" | tail -n 1)
+          READY_BODY=$(echo "$READY_OUT" | sed '$d')
+          echo "$READY_BODY"
+          if [ "$READY_CODE" != "200" ]; then
+            echo "❌ Readiness check failed with HTTP $READY_CODE"
+            echo "--- uvicorn log ---"; tail -30 /tmp/uvicorn.log
+            echo "--- celery log ---";  tail -30 /tmp/celery.log
+            exit 1
+          fi
           echo "✅ Smoke test passed!"
 
           # Clean up
           kill $UVICORN_PID 2>/dev/null || true
+          kill $CELERY_PID 2>/dev/null || true
 
       # ---- 10. Upload test reports (optional, useful for debugging) ----
       - name: Upload pytest reports
