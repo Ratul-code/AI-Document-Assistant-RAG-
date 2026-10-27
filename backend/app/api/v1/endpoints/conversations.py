@@ -32,7 +32,7 @@ both ``stream_id`` (in-flight correlation) and ``conversation_id``
 import asyncio
 import logging
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
@@ -414,10 +414,18 @@ async def list_messages(
         if row.citations:
             for entry in row.citations:
                 cits.append(QueryCitation.model_validate(entry))
+        # `row.role` is a `MessageRole` enum (the column is
+        # `Enum(MessageRole, name="message_role")`), so `.value` is the
+        # string the response schema wants. `cast` is needed because
+        # `MessageRole` is a plain `str`-valued enum rather than one
+        # typed as `Literal["user", "assistant"]`, so mypy can't prove
+        # the narrowed union without it. The DB enum constraint is the
+        # real guarantee — a value outside the two literals is
+        # impossible at rest.
         items.append(
             ConversationMessageRead(
                 id=row.id,
-                role=row.role.value if hasattr(row.role, "value") else str(row.role),
+                role=cast(Literal["user", "assistant"], row.role.value),
                 content=row.content,
                 citations=cits,
                 error_code=row.error_code,  # type: ignore[arg-type]

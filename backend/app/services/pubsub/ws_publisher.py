@@ -87,9 +87,22 @@ def _get_live_workers(client: Redis) -> list[str]:
             return list(_worker_list_cache)
 
     # Fetch outside the lock — SMEMBERS is slow vs. the lock window.
+    #
+    # redis-py's inline types for `smembers()` return `set[bytes | str]`
+    # because the `decode_responses` flag is a *runtime* constructor
+    # argument that the type system can't narrow on. `_get_client()`
+    # always builds the client with `decode_responses=True`, so members
+    # are guaranteed `str` here. Decode defensively anyway: it costs
+    # nothing (the happy path hits the `isinstance` fast branch) and
+    # keeps this correct if a caller ever passes a differently-configured
+    # client.
     try:
         members = client.smembers(settings.ws_worker_registry_key)
-        ids = sorted(members) if members else []
+        ids = (
+            sorted(m.decode("utf-8") if isinstance(m, bytes) else m for m in members)
+            if members
+            else []
+        )
     except Exception as exc:
         logger.warning("ws publisher: SMEMBERS %s failed: %s", settings.ws_worker_registry_key, exc)
         with _worker_list_lock:

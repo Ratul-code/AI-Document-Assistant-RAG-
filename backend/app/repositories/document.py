@@ -14,9 +14,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -284,7 +286,7 @@ async def delete_document(
     )
     result = await db.execute(stmt)
     await db.flush()
-    return result.rowcount > 0
+    return cast(CursorResult, result).rowcount > 0
 
 
 def delete_document_any_owner(db: Session, document_id: UUID) -> bool:
@@ -303,7 +305,7 @@ def delete_document_any_owner(db: Session, document_id: UUID) -> bool:
     )
     result = db.execute(stmt)
     db.flush()
-    return result.rowcount > 0
+    return cast(CursorResult, result).rowcount > 0
 
 
 # ----------------------------------------------------------------------

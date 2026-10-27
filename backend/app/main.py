@@ -227,7 +227,16 @@ def create_app() -> FastAPI:
     # handler turns `RateLimitExceeded` into a JSON 429 with the same
     # `{"detail": "..."}` shape the rest of the API uses.
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    # `add_exception_handler` is generic over `_ExceptionType` but
+    # Starlette binds it to the *declared* param type (`Exception`) rather
+    # than the concrete subclass passed here, so it can't prove our
+    # `(Request, RateLimitExceeded) -> JSONResponse` handler is
+    # contravariantly valid. The code is correct at runtime — Starlette
+    # dispatches on the exact exception class.
+    app.add_exception_handler(
+        RateLimitExceeded,
+        _rate_limit_exceeded_handler,  # type: ignore[arg-type]
+    )
     app.add_middleware(SlowAPIMiddleware)
 
     # Request ID middleware: stamps every request with a short

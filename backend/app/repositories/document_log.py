@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -252,7 +253,10 @@ async def delete_logs_for_document(
         .execution_options(synchronize_session="fetch")
     )
     result = await db.execute(stmt)
-    return int(result.rowcount or 0)
+    # A DELETE/UPDATE statement always yields a CursorResult, but the
+    # AsyncSession.execute() signature is typed as the broader Result[Any].
+    # Cast to narrow so `.rowcount` type-checks.
+    return int(cast(CursorResult, result).rowcount or 0)
 
 
 __all__ = [

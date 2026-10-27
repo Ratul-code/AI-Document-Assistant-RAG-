@@ -24,10 +24,12 @@ without a real provider. When a real model gets wired up, only
 from __future__ import annotations
 
 import logging
+from typing import cast
 from uuid import UUID
 
 from celery import shared_task
 from sqlalchemy import func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.core.celery_app import celery_app  # noqa: F401
@@ -63,7 +65,7 @@ def _mark_chunks_embedded(db: Session, chunk_ids: list[UUID]) -> int:
     result = db.execute(
         update(DocumentChunk).where(DocumentChunk.id.in_(chunk_ids)).values(needs_embedding=False)
     )
-    return result.rowcount or 0
+    return cast(CursorResult, result).rowcount or 0
 
 
 def _flip_status(

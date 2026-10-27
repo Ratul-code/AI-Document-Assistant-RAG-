@@ -27,6 +27,14 @@ mypy==1.13.0
 
 # --- Type stubs for third-party libraries without inline types ---
 # These provide type information for libraries that don't ship their own.
-types-redis==4.6.0.20241004
+#
+# We do NOT install `types-redis`. Since redis-py 4.4 the library ships
+# its own `py.typed` marker and inline types — installing the separate
+# stub package would put a 4-years-out-of-date view of the API on top
+# of reality, and it lacks methods that exist at runtime (notably
+# `Redis.aclose()`, which is the canonical way to close an async client
+# in redis-py ≥ 4.2). If you ever need a stub for a library that
+# doesn't ship one, install it JUST FOR THAT LIBRARY — not a catch-all
+# `types-foo` that may be stale relative to the installed runtime.
 types-requests==2.32.0.20240914
 python-dateutil==2.9.0.post0   # dep of types-*-style packages

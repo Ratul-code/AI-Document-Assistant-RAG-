@@ -13,6 +13,8 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.conversation import Conversation
+    from app.models.document import Document
+    from app.models.refresh_token import RefreshToken
 
 
 class User(Base):

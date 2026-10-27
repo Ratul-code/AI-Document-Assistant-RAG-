@@ -22,11 +22,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -172,7 +173,7 @@ async def delete_conversation(
     )
     result = await db.execute(stmt)
     await db.flush()
-    return result.rowcount > 0
+    return cast(CursorResult, result).rowcount > 0
 
 
 # ============================================================
@@ -413,7 +414,7 @@ def delete_conversation_any_owner_sync(db: Session, conversation_id: UUID) -> bo
     )
     result = db.execute(stmt)
     db.flush()
-    return result.rowcount > 0
+    return cast(CursorResult, result).rowcount > 0
 
 
 __all__ = [

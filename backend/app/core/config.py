@@ -70,9 +70,14 @@ class Settings(BaseSettings):
         default=False,
         description="Set Secure flag on cookies (true in production).",
     )
-    cookie_samesite: str = Field(
+    cookie_samesite: Literal["lax", "strict", "none"] = Field(
         default="lax",
-        description="SameSite attribute for auth cookies.",
+        description=(
+            "SameSite attribute for auth cookies. Use 'none' (with "
+            "cookie_secure=true) when the API and frontend are on different "
+            "origins and the browser must attach the cookie to cross-site "
+            "requests — required for the cross-origin WebSocket upgrade."
+        ),
     )
     refresh_cookie_name: str = Field(
         default="rfr",

@@ -30,6 +30,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.conversation_document import ConversationDocument
+    from app.models.conversation_message import ConversationMessage
     from app.models.user import User
 
 

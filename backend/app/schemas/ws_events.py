@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Annotated, Any
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -218,7 +218,11 @@ class WsEvent(BaseModel):
 
     type: WsEventType
     data: dict[str, Any]
-    ts: Annotated[datetime, Field(default_factory=lambda: datetime.now(UTC))]
+    # Defaulted via `default_factory` so builders don't have to pass it.
+    # `Field(default_factory=...)` (rather than wrapping in `Annotated`)
+    # is what the mypy pydantic plugin recognises as supplying a default,
+    # so call sites don't report a missing named argument.
+    ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # ---------------------------------------------------------------------

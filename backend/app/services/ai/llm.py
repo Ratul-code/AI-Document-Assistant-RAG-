@@ -45,8 +45,15 @@ class LLMProvider(Protocol):
     waste tokens.
     """
 
-    async def stream(self, messages: list[LLMMessage]) -> AsyncIterator[str]:
-        """Yield token deltas as they arrive."""
+    def stream(self, messages: list[LLMMessage]) -> AsyncIterator[str]:
+        """Yield token deltas as they arrive.
+
+        Declared as an async-generator method (no `async def`) so the
+        implementation can `yield` inside it. `async for provider.stream(...)`
+        is the right consumer pattern. Cancellation inside the generator
+        must be cooperative (e.g. `raise asyncio.CancelledError` on the
+        upstream HTTP request) — see `OpenAICompatibleProvider.stream`.
+        """
         ...
 
     async def complete(self, messages: list[LLMMessage]) -> str:
@@ -223,7 +230,8 @@ class OpenAICompatibleProvider:
                     async for raw_line in response.aiter_lines():
                         # Check for cancellation between lines so a
                         # disconnect tears the request down promptly.
-                        if asyncio.current_task() and asyncio.current_task().cancelled():
+                        task = asyncio.current_task()
+                        if task is not None and task.cancelled():
                             return
                         data = _strip_sse_data_lines(raw_line)
                         if data is None:
