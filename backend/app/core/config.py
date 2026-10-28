@@ -1,13 +1,24 @@
 """Application settings, loaded from environment variables / .env file."""
 
 import json
+import logging
 import os
 import socket
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+# The JWT secret that ships as the default. If a production deployment
+# is still using it, anyone can forge a token for any user id.
+_DEFAULT_JWT_SECRET = "dev-secret-change-me"
+
+# Minimum length for a production JWT secret. HS256 keys shorter than
+# the 256-bit hash output add no security — they just look plausible.
+_MIN_PROD_JWT_SECRET_LEN = 32
 
 
 class Settings(BaseSettings):
@@ -42,8 +53,14 @@ class Settings(BaseSettings):
         description="Used when DATABASE_URL is empty.",
     )
 
-    # Sync URL for Alembic. You may keep the same as async by
-    # using psycopg (sync): postgresql+psycopg://...
+    # Sync URL for the Celery workers (and anything else using the
+    # synchronous SQLAlchemy stack). Uses the `psycopg` sync driver:
+    # postgresql+psycopg://...
+    #
+    # NOTE: this is NOT used by Alembic. Migrations run against
+    # `effective_database_url` (i.e. `DATABASE_URL`, the async URL) —
+    # see the comment in `alembic/env.py` for the verification and the
+    # fallback plan if that ever changes.
     database_url_sync: str | None = None
 
     # --- Auth / JWT ---
@@ -687,6 +704,132 @@ class Settings(BaseSettings):
         if v.startswith("sqlite:///") and "aiosqlite" not in v:
             return v.replace("sqlite:///", "sqlite+aiosqlite:///")
         return v
+
+    @model_validator(mode="after")
+    def _validate_production_config(self) -> "Settings":
+        """Fail fast on unsafe production configuration.
+
+        The dev defaults are deliberately permissive (SQLite fallback,
+        default JWT secret, debug on, insecure cookies) because they
+        make `docker compose up` work with zero setup. Those same
+        defaults are dangerous in production, where they fail *quietly*:
+        the app boots, serves traffic, and signs tokens with a secret
+        that is published in the README.
+
+        So: in ``APP_ENV=prod`` we hard-fail on the misconfigurations
+        that silently produce an insecure or broken system, and log a
+        loud warning for the ones that are merely suspect.
+
+        Hard failures (boot is refused):
+          * jwt_secret is the shipped default or shorter than 32 chars
+          * app_debug is enabled (leaks stack traces)
+          * cookie_secure is false (auth cookies sent over plain HTTP)
+          * database_url is unset (silently falls back to local SQLite)
+          * cors_origins still points at localhost
+
+        Warnings (boot proceeds):
+          * embedding_provider is "stub" (retrieval returns garbage —
+            it does not error, it just answers the wrong questions)
+          * cors_origins contains "*" together with credentials
+
+        In every other environment (dev / test) this is a no-op.
+        """
+        if self.app_env.lower() not in {"prod", "production"}:
+            return self
+
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        # --- Critical: auth ---
+        if self.jwt_secret == _DEFAULT_JWT_SECRET:
+            errors.append(
+                "JWT_SECRET is still the default value. Anyone can forge an "
+                "access token for any user. Generate one with: "
+                'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        elif len(self.jwt_secret) < _MIN_PROD_JWT_SECRET_LEN:
+            errors.append(
+                f"JWT_SECRET is only {len(self.jwt_secret)} characters; "
+                f"at least {_MIN_PROD_JWT_SECRET_LEN} are required in production."
+            )
+
+        # --- Critical: debug mode ---
+        if self.app_debug:
+            errors.append(
+                "APP_DEBUG is true in production. FastAPI returns full stack "
+                "traces on unhandled errors, which can leak internal paths, "
+                "query fragments, and connection details."
+            )
+
+        # --- Critical: cookie transport ---
+        if not self.cookie_secure:
+            errors.append(
+                "COOKIE_SECURE is false in production. The auth cookies "
+                "(xs / rfr) would be sent over plain HTTP and can be read by "
+                "anyone on the network. Set COOKIE_SECURE=true."
+            )
+
+        # --- Critical: database ---
+        # An unset DATABASE_URL silently falls back to
+        # "sqlite+aiosqlite:///./app.db" — data lands in a file inside
+        # the container and is destroyed on the next redeploy.
+        if not self.database_url:
+            errors.append(
+                "DATABASE_URL is not set. The app would fall back to a local "
+                "SQLite file inside the container, and all data would be lost "
+                "on the next redeploy. Set DATABASE_URL to your Postgres URL."
+            )
+
+        # --- Critical: CORS ---
+        origins = self.cors_origins_list
+        if not origins:
+            errors.append(
+                "CORS_ORIGINS is empty. Every browser request from the frontend would be blocked."
+            )
+        else:
+            local_origins = [o for o in origins if "localhost" in o or "127.0.0.1" in o]
+            if local_origins:
+                errors.append(
+                    "CORS_ORIGINS still contains localhost origins "
+                    f"({', '.join(local_origins)}). The browser would block "
+                    "every request to the real site. Set CORS_ORIGINS to your "
+                    "public frontend origin."
+                )
+
+        # --- Soft: embedding provider ---
+        if self.embedding_provider.strip().lower() == "stub":
+            warnings.append(
+                "EMBEDDING_PROVIDER is 'stub' — this is the deterministic "
+                "SHA-256 test double, not a real embedding model. Retrieval "
+                "will return effectively random chunks and answers will be "
+                "grounded in nothing. Set EMBEDDING_PROVIDER=qwen3 for a real "
+                "deployment."
+            )
+
+        # --- Soft: wildcard CORS with credentials ---
+        if "*" in origins and self.cors_allow_credentials:
+            warnings.append(
+                "CORS_ORIGINS contains '*' while CORS_ALLOW_CREDENTIALS is "
+                "true. Browsers reject 'Access-Control-Allow-Origin: *' on "
+                "credentialed requests, so this combination breaks every "
+                "authenticated call. List your origins explicitly."
+            )
+
+        for msg in warnings:
+            logger.warning("[config] PRODUCTION WARNING: %s", msg)
+
+        if errors:
+            joined = "\n  - ".join(errors)
+            raise ValueError(
+                "Refusing to start with an unsafe production configuration "
+                f"(APP_ENV={self.app_env}). Fix the following:\n  - {joined}"
+            )
+
+        logger.info(
+            "[config] production configuration validated (%d warning(s))",
+            len(warnings),
+        )
+        return self
 
     @staticmethod
     def _to_list(v: str | None) -> list[str]:

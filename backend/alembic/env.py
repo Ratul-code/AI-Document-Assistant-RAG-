@@ -23,6 +23,35 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Override sqlalchemy.url with the URL from our settings.
+#
+# WHICH URL THIS USES
+# -------------------
+# `effective_database_url` resolves to `DATABASE_URL` (the async URL —
+# Supabase's transaction pooler on port 6543), falling back to
+# `DATABASE_URL_FALLBACK` (SQLite) when that is unset.
+#
+# Note that `DATABASE_URL_SYNC` (the session pooler on port 5432) is
+# NOT used here, even though its field description in
+# `app/core/config.py` says "Sync URL for Alembic". That comment is
+# misleading: this project's DDL — including the native Postgres ENUM
+# types created via `postgresql.ENUM(create_type=True)` in the
+# `create_document_embeddings`, `add_ocr_status_to_document_pages`
+# and `create_conversations` migrations — runs correctly through the
+# transaction pooler. This was verified end-to-end by running the full
+# migration chain from an empty database against Supabase through
+# port 6543: all four ENUM types were created and all 9 revisions
+# applied.
+#
+# `DATABASE_URL_SYNC` remains in use for the Celery workers, which
+# need a genuinely synchronous SQLAlchemy URL (their `psycopg` driver
+# is sync, while the app's is async).
+#
+# If a future Supabase pooler release does restrict DDL on the
+# transaction pooler, the fix is to point this at a session-mode URL
+# AND switch this module to a synchronous engine (`create_engine`
+# instead of `async_engine_from_config`) — the `psycopg` dialect in
+# `DATABASE_URL_SYNC` is the sync driver, so it cannot be handed to
+# the async engine used below as-is.
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.effective_database_url)
 

@@ -1,0 +1,128 @@
+# =============================================================================
+# Caddy — production reverse proxy
+# =============================================================================
+#
+# WHAT THIS DOES
+# --------------
+# Caddy is the only thing exposed to the internet. Everything else
+# (api, worker, frontend, redis) lives on the private `appnet`
+# Docker network and is unreachable from outside the VPS.
+#
+#   https://yourdomain.com/api/v1/*  ->  api:8000
+#   https://yourdomain.com/ws        ->  api:8000
+#   https://yourdomain.com/*         ->  frontend:3000
+#
+# Caddy provisions and renews a TLS certificate for {$DOMAIN}
+# automatically via Let's Encrypt — no certbot, no manual renewal.
+#
+#
+# WHY ONE DOMAIN INSTEAD OF TWO SUBDOMAINS
+# ----------------------------------------
+# Serving the frontend and the API from the SAME origin means:
+#   * The browser treats them as same-site, so auth cookies work with
+#     `SameSite=lax` (no `SameSite=None` + third-party-cookie fragility).
+#   * CORS is never exercised at all — same-origin requests skip it.
+#   * The WebSocket upgrade is same-origin, so no cross-site cookie drop.
+#
+# If you later split onto api.example.com + app.example.com, set
+# COOKIE_SAMESITE=none (with COOKIE_SECURE=true) in backend/.env and add
+# the frontend origin to CORS_ORIGINS — but you also then need a second
+# site block here. One domain is simpler and more robust.
+#
+#
+# {$DOMAIN} — WHERE THE DOMAIN COMES FROM
+# ---------------------------------------
+# Caddy expands `{$VAR}` from the environment at startup. The `caddy`
+# service in compose.prod.yaml passes DOMAIN in from `backend/.env`, so
+# changing your domain means editing ONE line in backend/.env — no code
+# change, no rebuild of the frontend.
+#
+# The default below lets `caddy validate` / `caddy run` work locally
+# without a DOMAIN set (it will try to serve "localhost").
+#
+#
+# REQUIRED ENVIRONMENT
+# --------------------
+#   DOMAIN=yourdomain.com
+#
+# Also make sure the domain's DNS A record points at this VPS's public
+# IP *before* starting Caddy — the Let's Encrypt HTTP-01 challenge
+# needs to reach you on port 80.
+# =============================================================================
+
+{$DOMAIN:localhost} {
+	encode zstd gzip
+
+	# ------------------------------------------------------------------------
+	# Backend routes.
+	#
+	# `/api/*` covers every REST endpoint. The backend mounts its routers
+	# under the `/api/v1` prefix (see backend/app/main.py), and Caddy
+	# forwards the path unchanged, so `/api/v1/documents` reaches the
+	# backend as `/api/v1/documents`.
+	# ------------------------------------------------------------------------
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# ------------------------------------------------------------------------
+	# WebSocket.
+	#
+	# The WS endpoint is mounted at `/ws` — NOT under `/api/v1` (see
+	# backend/app/websockets/routes.py). It needs its own route or the
+	# upgrade request would fall through to the frontend and 404.
+	#
+	# Caddy proxies WebSocket upgrades transparently; no extra config
+	# needed beyond the reverse_proxy.
+	# ------------------------------------------------------------------------
+	handle /ws {
+		reverse_proxy api:8000
+	}
+
+	# ------------------------------------------------------------------------
+	# Everything else -> the Next.js frontend.
+	# ------------------------------------------------------------------------
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	# ------------------------------------------------------------------------
+	# Security headers.
+	# ------------------------------------------------------------------------
+	header {
+		# Stop the browser from sniffing content types (defends against
+		# a mis-typed upload being interpreted as script).
+		X-Content-Type-Options "nosniff"
+
+		# Do not leak the domain to third parties via the Referer header.
+		Referrer-Policy "strict-origin-when-cross-origin"
+
+		# Only allow this site to be framed. `SAMEORIGIN` permits framing
+		# by our own pages while blocking clickjacking from other sites.
+		X-Frame-Options "SAMEORIGIN"
+
+		# Turn off powerful browser features we do not use.
+		# 'unsafe-inline' for style-src is required by Next.js, which
+		# injects a <style> tag for the CSS-in-JS critical path.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+
+		# Remove the fingerprint of the server software.
+		-Server
+	}
+
+	# ------------------------------------------------------------------------
+	# Access logging.
+	#
+	# stdout is the container's log driver, so these land in
+	# `docker compose logs caddy` and in whatever log shipper you point
+	# at the Docker daemon. The `json` encoder gives you structured
+	# fields to filter on later.
+	#
+	# Note: `json` (built in) rather than `json_log` (a separate module)
+	# — the latter is not compiled into the stock caddy image.
+	# ------------------------------------------------------------------------
+	log {
+		output stdout
+		format json
+	}
+}

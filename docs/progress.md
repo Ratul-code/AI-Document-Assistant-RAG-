@@ -8,7 +8,19 @@ Status legend: ✅ done · 🚧 in progress · ⏳ not started
 
 ## Last updated
 
-2026-10-21
+2026-10-28
+
+## Recent addition: VPS deploy readiness — env templates tracked, prod config corrected
+
+Ran a full deploy-readiness audit against the VPS workflow (`docker compose -f compose.yaml -f compose.prod.yaml -f compose.vps.yaml up -d --build`). The build system, migration chain, Caddy routing, and compose overlay layering all check out. Three deploy blockers were found and fixed.
+
+- **Root `.env.example` is now tracked** — it was untracked, so `cp .env.example .env` (the first step of the documented VPS deploy, `DOCKER.md`) would have failed on a fresh clone with a confusing "file not found". The root `.env` template is the *deploy-time* config (`DOMAIN`, `NEXT_PUBLIC_API_BASE_URL`, `IMAGE_TAG`, `APP_ENV`) read by Compose for `${VAR}` interpolation — distinct from `backend/.env`, which holds the *application* secrets. That split is now documented in the template itself.
+- **`Caddyfile` and `compose.vps.yaml` are now tracked** — both were untracked despite being required by the deploy command. `compose.vps.yaml` is the third overlay that re-enables local `build:` for the backend and frontend (because `compose.prod.yaml` clears it with `!reset null` in favour of a registry image that does not exist yet), and the `Caddyfile` is bind-mounted into the Caddy container at `/etc/caddy/Caddyfile`.
+- **`backend/.env` set to production values** — it was still on dev settings, which the fail-fast validator in `app/core/config.py` rejects outright when `APP_ENV=prod` (`APP_DEBUG=true`, the default `JWT_SECRET`, `COOKIE_SECURE=false`, and localhost `CORS_ORIGINS`). Because the api, worker, and beat containers all import `get_settings()` at module load, all three would have crash-looped on boot — and `depends_on: {condition: service_healthy}` would have blocked worker and beat behind the failing api, taking the entire stack down. `APP_ENV=prod`, `APP_DEBUG=false`, a fresh 64-char `JWT_SECRET`, `COOKIE_SECURE=true`, `COOKIE_SAMESITE=lax`, and `CORS_ORIGINS` pointing at the public origin are now set.
+- **Alembic pooler question resolved — no code change** — the config carried `DATABASE_URL_SYNC` (session pooler, port 5432) with a docstring calling it the "Sync URL for Alembic" and `backend/.env.example` asserting that DDL cannot run through the transaction pooler. Verified by direct test against the live Supabase project: `CREATE TYPE` **succeeds** through port 6543, three concurrent `pg_advisory_xact_lock` transactions serialize correctly, and the full 9-revision chain (including all four native Postgres ENUM types) applied cleanly from an empty database via the transaction pooler. The behaviour was therefore already correct; only the **comments were wrong**. `backend/alembic/env.py`, the `database_url_sync` field description in `app/core/config.py`, and `backend/.env.example` now state which URL Alembic actually uses, record the verification, and document the fallback plan if a future pooler release ever restricts DDL.
+- **Verification** — `pytest tests/core/test_production_config.py tests/api/test_websocket_origin.py` → 25 passed. `Settings()` under `APP_ENV=prod` validates with no errors and no warnings. `app.main` imports cleanly (34 routes). `alembic/env.py` parses.
+- **Remaining manual steps on the VPS** — set `DOMAIN` + `NEXT_PUBLIC_API_BASE_URL` in the root `.env`; create the private `doc-uploads` bucket in Supabase (the client never calls `create_bucket`); open ports 80/443/UDP-443 for the ACME HTTP-01 challenge; confirm the DNS A record points at the VPS.
+
 
 ## Recent addition: Rate limiting via `slowapi`
 

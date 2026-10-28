@@ -1,0 +1,112 @@
+# =============================================================================
+# AI Document Analyser — VPS overlay (build on the host)
+# =============================================================================
+#
+# WHAT THIS IS FOR
+# ----------------
+# `compose.prod.yaml` assumes a CI/CD pipeline that builds the images and
+# pushes them to a container registry, which the host then pulls:
+#
+#     IMAGE_TAG=v1.4.2 docker compose -f compose.yaml -f compose.prod.yaml pull
+#     IMAGE_TAG=v1.4.2 docker compose -f compose.yaml -f compose.prod.yaml up -d
+#
+# That registry does not exist yet. This overlay is the simpler
+# alternative: the images are BUILT ON THE VPS from the checked-out
+# source. It is the right choice for a first deployment — it removes
+# the registry, the CI publish step, and the SSH deploy step from the
+# critical path.
+#
+# USAGE (three files, in order)
+# -----------------------------
+#   docker compose -f compose.yaml -f compose.prod.yaml -f compose.vps.yaml up -d --build
+#
+#   Layer 1  compose.yaml      — shared service definitions
+#   Layer 2  compose.prod.yaml — prod overrides (no bind mounts, restart: always,
+#                               caddy + frontend prod services, required DOMAIN /
+#                               NEXT_PUBLIC_API_BASE_URL vars)
+#   Layer 3  compose.vps.yaml  — THIS FILE. Re-enables local `build:` for the
+#                               backend and frontend, because compose.prod.yaml
+#                               clears it with `!reset null` in favour of a
+#                               registry image.
+#
+# WHY THE BUILD SECTIONS COME BACK
+# --------------------------------
+# compose.prod.yaml does:
+#
+#     build: !reset null
+#     image: ai-doc-analyser-backend:${IMAGE_TAG:-latest}
+#
+# `!reset null` removes the `build:` key inherited from compose.yaml, so
+# the host tries to PULL the image and fails with "image not found"
+# (there is no registry). Re-declaring `build:` here restores local
+# builds while keeping every other prod override intact.
+#
+# The `image:` name is kept so the containers are still tagged
+# consistently — `docker compose up --build` builds and re-tags it.
+#
+# DEPLOY WORKFLOW (what you run every time you ship a change)
+# ----------------------------------------------------------
+#   On your Mac:
+#     git push
+#
+#   On the VPS:
+#     cd "AI Document Assistent"
+#     git pull
+#     docker compose -f compose.yaml -f compose.prod.yaml -f compose.vps.yaml up -d --build
+#
+# Your `backend/.env` on the VPS is NOT touched by `git pull` — it is
+# gitignored, so secrets stay put across deploys.
+#
+# FIRST BOOT NOTE
+# ---------------
+# The backend image carries PyTorch + sentence-transformers (~1.2 GB) and
+# the `hf_cache` volume downloads the Qwen3 embedding model on the first
+# run. Expect the first `up --build` to take 10–20 minutes. Subsequent
+# rebuilds are much faster (the pip layers and the model cache are
+# cached).
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend — build locally on the VPS.
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-doc-analyser-backend:${IMAGE_TAG:-latest}
+
+  # ---------------------------------------------------------------------------
+  # Worker — same image as the api, same build.
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-doc-analyser-backend:${IMAGE_TAG:-latest}
+
+  # ---------------------------------------------------------------------------
+  # Beat — same image as the api, same build.
+  # ---------------------------------------------------------------------------
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-doc-analyser-backend:${IMAGE_TAG:-latest}
+
+  # ---------------------------------------------------------------------------
+  # Frontend — build locally on the VPS.
+  #
+  # The build arg matters: NEXT_PUBLIC_API_BASE_URL is inlined into the
+  # client bundle at build time and MUST be the public origin
+  # (https://yourdomain.com), not the Docker-internal http://api:8000.
+  # compose.prod.yaml sets it as a runtime `environment:` var, but
+  # runtime vars do NOT reach the client bundle — only build args do.
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?set NEXT_PUBLIC_API_BASE_URL to your public origin, e.g. https://yourdomain.com}
+    image: ai-doc-analyser-frontend:${IMAGE_TAG:-latest}
