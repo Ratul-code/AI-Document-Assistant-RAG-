@@ -26,13 +26,48 @@ path. Tests in `test_rerank.py` opt back in via `monkeypatch.setenv`.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
-from app.core.config import get_settings
-from app.core.rate_limit import limiter
-from app.db.sync_session import reset_for_tests
-from app.services.ai.embeddings import reset_embedding_model_singleton
-from app.services.ai.rerankers import reset_reranker_singleton
+# =============================================================================
+# ENVIRONMENT PINS — MUST BE SET BEFORE THE APP IS IMPORTED
+# =============================================================================
+# `backend/.env` is BOTH the local dev config AND the production config
+# on the VPS, so it carries production values (APP_ENV=prod,
+# COOKIE_SECURE=true). The test suite must never inherit them.
+#
+# These have to be set HERE, at module scope, rather than inside the
+# autouse fixture below — because several modules snapshot the settings
+# at IMPORT time. `app/api/v1/endpoints/auth.py` does:
+#
+#     _settings = get_settings()
+#
+# at module level, and reads `_settings.cookie_secure` when setting the
+# auth cookies. A fixture that runs per-test is too late: by then the
+# module is already imported and has frozen `cookie_secure=True` into
+# its module-level `_settings`.
+#
+# With COOKIE_SECURE=true, the TestClient (plain HTTP) sets the auth
+# cookie on login but never sends it back — the `Secure` attribute
+# tells the client jar to withhold it over http:// — so every
+# authenticated test fails with 401 "Not authenticated".
+#
+# `conftest.py` is imported before any test module, so setting these
+# here guarantees the app sees them at import time.
+#
+# "test" behaves exactly like "dev" for the fail-fast validator in
+# `app/core/config.py` (it only fires for prod/production), so this
+# stays permissive.
+# =============================================================================
+os.environ["APP_ENV"] = "test"
+os.environ["COOKIE_SECURE"] = "false"
+
+from app.core.config import get_settings  # noqa: E402
+from app.core.rate_limit import limiter  # noqa: E402
+from app.db.sync_session import reset_for_tests  # noqa: E402
+from app.services.ai.embeddings import reset_embedding_model_singleton  # noqa: E402
+from app.services.ai.rerankers import reset_reranker_singleton  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -48,8 +83,13 @@ def _reset_settings_cache(monkeypatch):
     # Disable rate limiting by default so existing tests that hit an
     # endpoint >N times in a row (e.g. analysis tests) don't get
     # throttled. The dedicated `tests/api/test_rate_limit.py` suite
-    # opts back in via its own per-test fixture.
+    # opts back in via itsown per-test fixture.
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+    # Re-assert the pins from module scope, in case a test (or an
+    # earlier fixture) mutated the environment. `monkeypatch` undoes
+    # these at the end of each test.
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("COOKIE_SECURE", "false")
     get_settings.cache_clear()
     # Mirror the env-var on the singleton Limiter — slowapi reads
     # `limiter.enabled` directly (not via settings), so we have to
