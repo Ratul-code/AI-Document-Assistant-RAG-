@@ -76,6 +76,18 @@ services:
       # app/core/config.py so the api/worker agree on the channel
       # without a separate env var.
       REDIS_URL: redis://redis:6379/1
+      # Rate-limit counters. WITHOUT this override the app falls back
+      # to the default `redis://localhost:6379/2` — but "localhost"
+      # inside the api container is the api container itself, not the
+      # redis service. The limiter would then silently fall back to
+      # per-process in-memory counters, which means (a) every uvicorn
+      # worker gets its own independent budget, so the effective rate
+      # limit is N x the configured one, and (b) all counters reset
+      # whenever the container restarts.
+      #
+      # /2 is a separate Redis logical DB from the Celery broker (/0)
+      # and the WS pub/sub channel (/1), so the three never collide.
+      RATE_LIMIT_STORAGE_URI: redis://redis:6379/2
       # Make sure Python can find the `app` package wherever it's
       # mounted. /app/backend is the WORKDIR + copy location set in
       # the Dockerfile; this lets `from app...` imports resolve

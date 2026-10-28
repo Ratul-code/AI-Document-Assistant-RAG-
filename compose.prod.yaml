@@ -9,18 +9,33 @@
 #   * The image is pulled by a versioned tag (IMAGE_TAG), not built
 #     locally. CI/CD publishes ai-doc-analyser-backend:${IMAGE_TAG}
 #     to a registry, and the host pulls it on each deploy.
+#     (If you have no registry yet, add compose.vps.yaml as a third
+#     layer to build on the host instead — see that file.)
 #   * Restart policy is `always` (not `unless-stopped`) so a crashed
 #     container keeps coming back even after a Docker daemon outage.
 #   * APP_ENV defaults to `prod`. APP_DEBUG stays off.
-#   * The api is NOT exposed on a public port by default; put a
-#     reverse proxy (Caddy / nginx / Traefik) in front and forward
-#     443 → api:8000.
+#   * Caddy is the ONLY service published to the host. The api and
+#     frontend are reachable only over the private Docker network;
+#     Caddy terminates TLS and routes by path.
+#   * The frontend's public API URL is required, because the value
+#     baked into the browser bundle must be a real public origin.
 #
-# Usage:
+# Usage (registry / CI-CD workflow):
 #   IMAGE_TAG=v1.4.2 \
 #     docker compose -f compose.yaml -f compose.prod.yaml pull
 #   IMAGE_TAG=v1.4.2 \
 #     docker compose -f compose.yaml -f compose.prod.yaml up -d
+#
+# Usage (build-on-the-VPS workflow — no registry needed):
+#   docker compose -f compose.yaml -f compose.prod.yaml -f compose.vps.yaml up -d --build
+#
+# Required environment (root .env — see .env.example):
+#   DOMAIN=yourdomain.com
+#   NEXT_PUBLIC_API_BASE_URL=https://yourdomain.com
+#
+# Both are declared with Compose's `:?` syntax, so the stack refuses to
+# start with a clear message instead of silently deploying a frontend
+# that points browsers at the Docker-internal `http://api:8000`.
 #
 # Override-key syntax note: `!reset null` (and `!reset []`) are
 # Compose's documented way to clear a key inherited from a base
@@ -93,3 +108,114 @@ services:
   # accidentally start a second DB. To start a co-located DB in
   # staging, run with `--profile local-pg`.
   # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # Frontend — Next.js standalone server, frozen image.
+  #
+  # This override was MISSING before, which meant the frontend in prod
+  # inherited the dev-oriented base config: it published port 3000
+  # directly on the host, and it baked `http://api:8000` into the
+  # browser bundle (a Docker-internal hostname that no real browser
+  # can resolve).
+  #
+  # In prod the frontend is NOT published to the host at all — Caddy
+  # reaches it over the `appnet` network. The browser talks to Caddy
+  # only, and Caddy routes by path.
+  # ---------------------------------------------------------------------------
+  frontend:
+    build: !reset null
+    image: ai-doc-analyser-frontend:${IMAGE_TAG:-latest}
+    restart: always
+    # Drop the host port binding. Caddy is the only public entrypoint;
+    # publishing 3000 would expose the frontend directly over plain
+    # HTTP, bypassing TLS and the security headers.
+    ports: !reset []
+    environment:
+      # Next.js mode. Always "production" on a real deploy — the
+      # standalone server is built for it. Hardcoded on purpose.
+      NODE_ENV: production
+      # The browser-facing API URL. This is inlined into the client
+      # bundle at BUILD time, so it must be the PUBLIC origin, not
+      # the Docker-internal `api:8000`. Set it to your real domain —
+      # it is supplied from the ROOT `.env` file (or the shell).
+      #
+      # NOTE: the value that actually reaches the browser bundle is the
+      # BUILD ARG set in compose.vps.yaml, not this runtime var. Next
+      # inlines NEXT_PUBLIC_* at `next build` time, so changing it
+      # requires a rebuild (`up -d --build`), not just a restart.
+      # This runtime var is kept so server-side code (RSC, middleware)
+      # sees the same value.
+      #
+      # If this is wrong, every REST call and the WebSocket fail with
+      # a DNS error in the browser while the containers all look healthy.
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?set NEXT_PUBLIC_API_BASE_URL to your public origin, e.g. https://yourdomain.com}
+      # Server-side-only address. The Next.js server (RSC layouts,
+      # middleware, route handlers) reaches the backend over the
+      # Docker network. Next.js replaces this with `undefined` in
+      # client bundles, so the browser never sees it.
+      #
+      # `api:8000` is the Docker-internal service name — resolvable
+      # only from inside the `appnet` network, and correct for every
+      # deployment regardless of your public domain. Hardcoded on
+      # purpose; there is nothing to make configurable.
+      API_INTERNAL_BASE_URL: http://api:8000
+
+  # ---------------------------------------------------------------------------
+  # Caddy — the reverse proxy. THE ONLY PUBLIC ENTRYPOINT.
+  #
+  # Terminates TLS (Let's Encrypt, automatic + auto-renewed), routes
+  # by path, and adds security headers. Nothing else in the stack is
+  # published to the host, so the attack surface is just 80/443.
+  #
+  # `DOMAIN` comes from backend/.env and is expanded by Caddy into the
+  # `{$DOMAIN}` placeholder in the Caddyfile. Caddy REFUSES TO START
+  # if the domain is not set and cannot obtain a certificate, which is
+  # the intended fail-fast behaviour — a wrong DOMAIN surfaces
+  # immediately rather than serving a broken site.
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: ai_doc_caddy
+    restart: always
+    # 80 is needed for the ACME HTTP-01 challenge (Let's Encrypt
+    # validates ownership over plain HTTP). 443 serves the site.
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    environment:
+      # Consumed by the `{$DOMAIN}` placeholder in the Caddyfile.
+      # Read by Docker Compose from the ROOT `.env` file — not
+      # backend/.env. This is an interpolation resolved on the host
+      # before the container starts, then passed in as a container env
+      # var. Caddy then expands `{$DOMAIN}` at ITS startup.
+      DOMAIN: ${DOMAIN:?set DOMAIN in the root .env file to your public domain, e.g. yourdomain.com}
+    volumes:
+      # The Caddyfile itself (read-only — Caddy never writes to it).
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persist the ACME account key and the TLS certificates across
+      # restarts. Without these, every redeploy re-requests certs and
+      # burns Let's Encrypt rate limits.
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - appnet
+    depends_on:
+      - api
+      - frontend
+
+# =============================================================================
+# Named volumes — prod additions
+# =============================================================================
+# Compose merges the top-level `volumes:` map across overlay files, so
+# the base file's redis_data / postgres_data / hf_cache still apply
+# and these two are added on top.
+volumes:
+  caddy_data:
+    # ACME account key + TLS certificates. Must survive restarts, or
+    # every redeploy re-requests a certificate and burns through
+    # Let's Encrypt's rate limits.
+    driver: local
+  caddy_config:
+    # Caddy's runtime config (mostly empty; kept for completeness).
+    driver: local

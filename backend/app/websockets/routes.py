@@ -8,13 +8,17 @@ Auth:
 
 Lifecycle:
     1. Validate cookie -> resolve user_id
-    2. accept() the connection
-    3. register with ConnectionManager under user_id
-    4. spawn a heartbeat task that sends a protocol-level PING every
+    2. Validate the handshake's Origin header against the CORS allowlist
+       (Cross-Site WebSocket Hijacking protection). A missing Origin
+       is allowed (non-browser clients); a mismatched one is rejected.
+       This MUST happen before accept().
+    3. accept() the connection
+    4. register with ConnectionManager under user_id
+    5. spawn a heartbeat task that sends a protocol-level PING every
        _HEARTBEAT_INTERVAL_SECONDS; track the time of the last received
        client frame (browser auto-PONGs count)
-    5. main loop: receive() — handles PONGs and any client messages
-    6. on disconnect / heartbeat timeout: unregister and exit
+    6. main loop: receive() — handles PONGs and any client messages
+    7. on disconnect / heartbeat timeout: unregister and exit
 """
 
 from __future__ import annotations
@@ -58,6 +62,66 @@ def _user_id_from_cookie(websocket: WebSocket) -> str | None:
     return payload.get("sub")
 
 
+def _origin_is_allowed(websocket: WebSocket) -> bool:
+    """Check the WebSocket handshake's ``Origin`` header against the allowlist.
+
+    Why this is needed
+    ------------------
+    A WebSocket upgrade is NOT subject to the browser's same-origin
+    policy the way a regular ``fetch`` is. ``CORSMiddleware`` handles
+    HTTP responses only — the browser never checks an
+    ``Access-Control-Allow-Origin`` header on a WS handshake, and it
+    sends the ambient cookies (including our ``xs`` auth cookie)
+    automatically.
+
+    That makes the endpoint vulnerable to Cross-Site WebSocket
+    Hijacking (CSWSH): any page the user visits can open
+    ``wss://our-host/ws`` and the browser will attach the user's
+    session cookie, handing the attacker an authenticated channel.
+
+    The defence is the ``Origin`` header, which the browser sets on
+    every WS handshake and which we compare against the same
+    ``CORS_ORIGINS`` allowlist that guards the REST API.
+
+    Policy
+    ------
+    * No ``Origin`` header  -> ALLOW. Non-browser clients (mobile
+      apps, ``websocat``, server-to-server) legitimately omit it, and
+      blocking them would break legitimate use for no security gain:
+      a non-browser client is not driven by a third-party web page.
+    * ``Origin`` present and in the allowlist -> ALLOW.
+    * ``Origin`` present but NOT in the allowlist -> REJECT.
+
+    Note that ``*`` in the allowlist disables the check entirely,
+    which is the correct reading of "allow any origin" — but it also
+    disables the CSWSH protection, so it should not be used in
+    production. The production config validator warns about it.
+    """
+    settings = get_settings()
+    origin = websocket.headers.get("origin")
+
+    # Non-browser client (or a same-origin request from a browser
+    # that omits Origin — some non-standard clients). Nothing to check.
+    if not origin:
+        return True
+
+    allowed = settings.cors_origins_list
+    if not allowed:
+        # No allowlist configured -> nothing to match against. Refuse
+        # rather than assume, since an empty list in production means
+        # the operator forgot to set CORS_ORIGINS.
+        logger.warning("ws rejected: Origin=%r but no CORS_ORIGINS configured", origin)
+        return False
+
+    if "*" in allowed:
+        return True
+
+    # Normalise: a trailing slash and default ports are the same
+    # origin to the browser, so compare on the normalised form.
+    normalised = origin.rstrip("/").lower()
+    return any(candidate.rstrip("/").lower() == normalised for candidate in allowed)
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """Main WebSocket endpoint. One connection per browser tab."""
@@ -76,10 +140,23 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    # 2. Accept
+    # 2. Origin check (CSWSH protection).
+    #
+    # MUST run BEFORE accept(). Once the handshake is accepted the
+    # connection is live and the browser will happily pump frames
+    # through it — rejecting afterwards would be too late.
+    if not _origin_is_allowed(websocket):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        logger.info(
+            "ws rejected: origin=%r not in allowlist",
+            websocket.headers.get("origin"),
+        )
+        return
+
+    # 3. Accept
     await websocket.accept()
 
-    # 3. Register
+    # 4. Register
     await manager.connect(user_id, websocket)
     logger.info("ws accepted user_id=%s", user_id)
 

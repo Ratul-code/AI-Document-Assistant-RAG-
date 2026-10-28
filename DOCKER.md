@@ -396,6 +396,31 @@ run everything fully self-contained:
 
 ## VPS deployment (when you're ready)
 
+The production stack is **Caddy + api + worker + beat + frontend +
+redis**. Caddy is the only service published to the host — it
+terminates TLS automatically and routes by path:
+
+```
+https://yourdomain.com/api/v1/*  ->  api:8000
+https://yourdomain.com/ws        ->  api:8000
+https://yourdomain.com/*         ->  frontend:3000
+```
+
+Everything else lives on the private `appnet` Docker network.
+
+### Prerequisites
+
+- A VPS with **at least 4 GB RAM** — the backend image carries
+  ~1.2 GB of PyTorch + sentence-transformers, and you are running
+  Postgres/Redis, the API, a Celery worker, beat, and the frontend.
+- A domain whose **DNS A record already points at the VPS's public
+  IP**. Caddy needs this to complete the Let's Encrypt challenge;
+  without it Caddy will not start.
+- Ports 80 and 443 open in the VPS firewall (80 is needed for the
+  ACME HTTP-01 challenge, 443 serves the site).
+
+### One-time setup
+
 ```bash
 # 1. SSH into the VPS
 ssh you@your-vps
@@ -404,43 +429,140 @@ ssh you@your-vps
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker you   # log out and back in after this
 
-# 3. Install your project (git clone, scp, or whatever)
+# 3. Install your project
 git clone <your-repo-url>
 cd "AI Document Assistent"
 
-# 4. Set production env values in backend/.env
-#    * Set APP_ENV=prod
-#    * Set a real JWT_SECRET (long random string)
-#    * Set COOKIE_SECURE=true, COOKIE_SAMESITE=none
-#    * Set CORS_ORIGINS to your real frontend URL
-#    * Keep DATABASE_URL pointing to your Supabase (or flip to local pg)
+# 4. Create the deploy-time env file (domain + public API URL).
+#    Copy the template and edit it:
+cp .env.example .env
+nano .env
+#    → DOMAIN=yourdomain.com
+#    → NEXT_PUBLIC_API_BASE_URL=https://yourdomain.com
 
-# 5. Build + start in detached mode
-IMAGE_TAG=v1.4.2 docker compose -f compose.yaml -f compose.prod.yaml up -d
+# 5. Create the app's env file (secrets). See backend/.env.example
+#    for the full list of what the app needs. The essentials:
+nano backend/.env
+#    → APP_ENV=prod
+#    → APP_DEBUG=false
+#    → JWT_SECRET=<python -c "import secrets; print(secrets.token_urlsafe(48))">
+#    → COOKIE_SECURE=true
+#    → COOKIE_SAMESITE=lax
+#    → CORS_ORIGINS=https://yourdomain.com
+#    → DATABASE_URL=... / DATABASE_URL_SYNC=...  (your Postgres)
+#    → SUPABASE_URL=... / SUPABASE_SERVICE_ROLE_KEY=...
+#    → EMBEDDING_PROVIDER=qwen3      (NOT "stub" — the stub returns
+#                                     garbage from retrieval)
+#
+#    The app REFUSES TO BOOT if any of the critical ones are wrong;
+#    the error message names each one.
 
-# 6. Verify
-docker compose -f compose.yaml -f compose.prod.yaml ps
-curl http://localhost:8000/api/v1/openapi.json
+# 6. Build + start in detached mode
+docker compose -f compose.yaml -f compose.prod.yaml -f compose.vps.yaml up -d --build
 
-# 7. Put a reverse proxy in front (Caddy is easiest)
-#    Caddyfile:
-#      api.yourdomain.com {
-#        reverse_proxy localhost:8000
-#      }
+# 7. Verify
+docker compose -f compose.yaml -f compose.prod.yaml -f compose.vps.yaml ps
+docker compose -f compose.yaml -f compose.prod.yaml -f compose.vps.yaml logs -f caddy
+curl https://yourdomain.com/api/v1/health/live
 ```
 
-For production, also consider:
+**The first boot takes 10–20 minutes** — the image builds from
+scratch and the `hf_cache` volume downloads the Qwen3 embedding model.
+Subsequent rebuilds are much faster.
 
-- Running `docker compose -f compose.yaml -f compose.prod.yaml pull && up -d`
-  periodically to pick up base image security updates.
-- Setting up log rotation (Docker Desktop does this on Mac/Win; on
-  Linux configure `/etc/logrotate.d/docker`).
-- Backing up the `redis_data` and `postgres_data` volumes (cron +
-  `docker run --rm -v ai-doc-analyser_redis_data:/data -v $(pwd):/backup
-  alpine tar czf /backup/redis-$(date +%F).tgz /data`).
-- Switching the front of the stack to a real TLS-terminating
-  reverse proxy (Caddy, nginx, Traefik) so the api isn't directly
-  exposed.
+### Deploying a change (the routine)
+
+```bash
+# On your Mac
+git push
+
+# On the VPS
+cd "AI Document Assistent"
+git pull
+docker compose -f compose.yaml -f compose.prod.yaml -f compose.vps.yaml up -d --build
+```
+
+Your `backend/.env` on the VPS is **not** touched by `git pull` — it
+is gitignored, so your secrets stay put across deploys.
+
+### The three compose layers
+
+| Layer | Purpose |
+|---|---|
+| `compose.yaml` | Shared service definitions (both dev and prod) |
+| `compose.prod.yaml` | Prod overrides: no bind mounts, `restart: always`, the `frontend` and `caddy` services, and the required `DOMAIN` / `NEXT_PUBLIC_API_BASE_URL` vars |
+| `compose.vps.yaml` | Re-enables local `build:` so the images are built on the VPS instead of pulled from a registry |
+
+`compose.prod.yaml` alone assumes a CI/CD pipeline that pushes images
+to a registry. Since no registry is configured yet, layer 3
+(`compose.vps.yaml`) is what makes a build-on-the-VPS deploy work.
+
+### Where each variable's value comes from
+
+Docker Compose has two completely different mechanisms, and mixing them
+up is the classic source of "why is my variable empty?":
+
+| Mechanism | Syntax | Resolved by | Supports `${VAR}`? |
+|---|---|---|---|
+| `environment:` | `KEY: value` or `KEY: ${VAR}` | **Compose, on the host**, at `up` time | ✅ Yes |
+| `env_file:` | `- path/to/file` | **The container**, at start time | ❌ No |
+
+Concretely, in this stack:
+
+| Variable | Where it's set | Value | Why |
+|---|---|---|---|
+| `DOMAIN` | root `.env` → `${DOMAIN:?...}` | your domain | Caddy expands `{$DOMAIN}` in the Caddyfile at its own startup |
+| `NEXT_PUBLIC_API_BASE_URL` | root `.env` → `${NEXT_PUBLIC_API_BASE_URL:?...}` | your public origin | Baked into the browser bundle **at build time** |
+| `API_INTERNAL_BASE_URL` | hardcoded in `compose.prod.yaml` | `http://api:8000` | A Docker-internal name. Correct for every deployment, and never reaches the browser |
+| `NODE_ENV` | hardcoded in `compose.prod.yaml` | `production` | Next.js mode — always production on a real deploy |
+| `DATABASE_URL`, `JWT_SECRET`, API keys | `backend/.env` via `env_file:` | your secrets | Read by the api / worker / beat containers |
+
+**The `:?` suffix is a guard.** If `DOMAIN` or `NEXT_PUBLIC_API_BASE_URL`
+is missing from the root `.env`, Compose refuses to start with a clear
+error instead of deploying a broken frontend:
+
+```
+error while interpolating services.frontend.environment.NEXT_PUBLIC_API_BASE_URL:
+required variable NEXT_PUBLIC_API_BASE_URL is missing a value
+```
+
+**Two different env-file syntaxes, two different owners.** Compose's
+interpolation is `${VAR}` and reads the **root** `.env`. Caddy's is
+`{$VAR}` and reads the **container's** environment (which Compose
+populated from the root `.env`). The app's own settings use pydantic's
+`env_file=` and read `backend/.env`. Three syntaxes, three files, one
+purpose each.
+
+### Why the domain lives in `.env` and not in the code
+
+`Caddyfile` uses `{$DOMAIN}`, which Caddy expands from the
+environment at startup. Changing your domain means editing one line
+in `.env` and restarting Caddy — no code change, and no rebuild of
+the frontend for the *server-side* parts.
+
+**One exception:** `NEXT_PUBLIC_API_BASE_URL` is inlined into the
+browser's JavaScript bundle at **build** time, so changing it
+requires a rebuild of the frontend image (`up -d --build`). That is
+why the prod overlay declares it with Compose's `:?` syntax — the
+stack refuses to start rather than shipping a frontend that points
+browsers at the Docker-internal `http://api:8000`.
+
+### Production hygiene
+
+- **Log rotation** — configure `/etc/logrotate.d/docker` on the host.
+  Docker Desktop does this automatically; a Linux VPS does not.
+- **Backups** — if you use the in-stack Postgres, back up the
+  `postgres_data` volume. If you use Supabase (the default here),
+  Supabase handles that.
+- **Redis** — `--maxmemory 256mb` with `allkeys-lru`. If the
+  container is under memory pressure Redis can evict Celery tasks and
+  rate-limit counters. Raise the limit or switch the policy to
+  `noeviction` for a busy deployment.
+- **Base image updates** — periodically rebuild to pick up security
+  updates in the base images.
+- **The `caddy_data` volume must persist** — it holds the ACME
+  account key and the TLS certificates. If it is wiped, every restart
+  re-requests certificates and burns Let's Encrypt rate limits.
 
 ---
 

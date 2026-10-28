@@ -25,11 +25,29 @@ A full-stack application built as a personal learning project. Users sign up, up
 ├── docs/            # DESIGN.md (visual source of truth), progress.md, decisions.md
 ├── compose.yaml     # Shared Docker Compose base
 ├── compose.dev.yaml # Dev overlay (bind mounts, hot reload)
-├── compose.prod.yaml# Prod overlay (pinned tags, no mounts)
+├── compose.prod.yaml# Prod overlay (no mounts, Caddy + frontend services)
+├── compose.vps.yaml # VPS overlay (build images on the host, no registry)
+├── Caddyfile        # Production reverse proxy (TLS, path routing)
 ├── Dockerfile       # Multi-stage backend image
 ├── DOCKER.md        # Operator cheat sheet for the compose stack
 └── AGENTS.md        # How AI coding agents should work on this repo
 ```
+
+### Environment files
+
+There are three env files, each serving a different layer. All real ones are
+gitignored; the `.example` twins are tracked as templates.
+
+| File | Read by | Contains | When you need it |
+|---|---|---|---|
+| `backend/.env` | The app (api / worker / beat) | DB URLs, API keys, `JWT_SECRET`, LLM + retrieval settings | Always. Copy from `backend/.env.example`. |
+| `frontend/.env.local` | `next dev` / `next build` | `NEXT_PUBLIC_API_BASE_URL` | Only when running the frontend **outside** Docker. Copy from `frontend/.env.example`. |
+| `.env` (repo root) | Docker Compose | `DOMAIN`, `NEXT_PUBLIC_API_BASE_URL`, `IMAGE_TAG` | For deployments. Copy from `.env.example`. |
+
+Why the frontend needs its own file: `NEXT_PUBLIC_*` values are inlined into
+the browser's JavaScript bundle at **build** time, so the frontend must know
+the backend's origin when it builds. In Docker, Compose passes the value as a
+build arg instead — so the file is only needed for a bare `npm run dev`.
 
 - `AGENTS.md` — workflow + boundaries for AI coding agents.
 - `backend/architecture.md` — backend layout, conventions, async patterns.
@@ -119,8 +137,20 @@ celery -A app.tasks.celery_app beat -l info     # in a third (for periodic sweep
 # Frontend
 cd frontend
 npm install
+cp .env.example .env.local    # sets NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 npm run dev
 ```
+
+> **Why does the frontend need its own env file?**
+> `NEXT_PUBLIC_*` variables are inlined into the browser's JavaScript bundle at
+> **build** time, so the frontend needs to know the backend's origin when it
+> builds. Running it outside Docker means nothing else supplies that value, so
+> it comes from `frontend/.env.local` (gitignored — copy it from
+> `frontend/.env.example`).
+>
+> When the frontend runs **in Docker**, you don't need this file: Compose
+> supplies the value as a build arg instead. See [`DOCKER.md`](./DOCKER.md) for
+> the VPS deployment, where the same variable is set in the root `.env`.
 
 ---
 
